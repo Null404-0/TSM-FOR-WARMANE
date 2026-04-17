@@ -89,4 +89,11 @@ L["Use the search box and category filters above to search the AuctionDB data."]
 L["You can filter the results by item subtype by using this dropdown. For example, if you want to search for all herbs, you would select \"Trade Goods\" in the item type dropdown and \"Herbs\" in this dropdown."] = "你可以用这个下拉菜单来按物品 子类型 筛选搜索结果。例如,如果你想搜索所有的草药,你需要物品类型下拉菜单中选择\"商品\",并在物品子类型下拉菜单中选择\"草药\"。"
 L["You can filter the results by item type by using this dropdown. For example, if you want to search for all herbs, you would select \"Trade Goods\" in this dropdown and \"Herbs\" as the subtype filter."] = "你可以用这个下拉菜单来按物品 类型 筛选搜索结果。例如,如果你想搜索所有的草药,你需要物品类型下拉菜单中选择\"商品\",并在物品子类型下拉菜单中选择\"草药\"。"
 L["You can use this page to lookup an item or group of items in the AuctionDB database. Note that this does not perform a live search of the AH."] = "你可以使用这个页面来查看AuctionDB数据库中的物品或者分组。请注意,这并不是在拍卖行的实时搜索。"
+L["If checked, AuctionDB will add a tab to the AH to allow for in-game scans. If you are using the TSM app exclusively for your scans, you may want to hide it by unchecking this option. This option requires a reload to take effect."] = "如果勾选，AuctionDB将在拍卖行添加一个标签用于游戏内扫描。如果您专门使用TSM应用程序进行扫描，可以取消此选项以隐藏该标签。此选项需要重载界面才能生效。"
+L["Preparing Filter %d / %d"] = "准备筛选器 %d / %d"
+L["Preparing Filters..."] = "正在准备筛选器..."
+L["Scan Selected Groups"] = "扫描选中的分组"
+L["Scanning %d / %d (Page %d / %d)"] = "正在扫描 %d / %d (页 %d / %d)"
+L["Show AuctionDB AH Tab (Requires Reload)"] = "显示AuctionDB拍卖行标签 (需要重载)"
+L["This will do a slow auction house scan of every item in the selected groups and update their AuctionDB prices. This may take several minutes."] = "这将对选中分组中的每件物品进行较慢的拍卖行扫描，并更新其AuctionDB价格。可能需要几分钟。"
  
