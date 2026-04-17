@@ -45,4 +45,9 @@ L["%sRight-Click|r to ignore this item for this session. Hold %sshift|r to ignor
 L["Stack Size"] = "堆叠大小"
 L["The destroying log will throw out any data that is older than this many days."] = "早于这个设定时间的分解日志数据将被删除。"
 L["Time"] = "时间"
+L["Average Result (per Destroy)"] = "平均结果 (每次分解)"
+L["Averages"] = "平均值"
+L["If checked, soulbound items can be destroyed by TSM_Destroying. USE THIS WITH EXTREME CAUTION!"] = "如果勾选，TSM_Destroying将可以分解灵魂绑定物品。请极其谨慎使用此功能！"
+L["Include Soulbound Items"] = "包括灵魂绑定物品"
+L["Times Destroyed"] = "分解次数"
  
