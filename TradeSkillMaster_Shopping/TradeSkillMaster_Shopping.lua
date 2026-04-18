@@ -33,6 +33,7 @@ local savedDBDefaults = {
 		sniperVendorPrice = true,
 		sniperMaxPrice = true,
 		sniperCustomPrice = "0c",
+		sniperSellerFilter = "",
 	},
 }
 
