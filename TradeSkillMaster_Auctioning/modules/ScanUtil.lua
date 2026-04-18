@@ -66,10 +66,17 @@ local function CallbackHandler(event, ...)
 		Scan:ScanNextFilter()
 	elseif event == "SCAN_COMPLETE" then
 		local data = ...
-		-- 【优化3】扫描完成时，只处理尚未处理的物品
+		-- 【修复】确保 filter 里所有物品都会走一次 ProcessScannedItem，
+		-- 否则：
+		--   1) AH 上完全没人挂单的物品（例如 "智力的伟大" 当前无人挂）会被直接丢弃，
+		--      永远走不到 Post:GetPostPrice 里的 postingNormal 分支，无法按 normalPrice 上架。
+		--   2) 合并查询里的同名多 itemID 物品（例如 暗月卡片：伟大 力/敏/智 三个变体），
+		--      只要某个变体当前无人挂，data 里就缺它，扫描结果随机丢失物品。
 		for _, itemString in ipairs(Scan.filterList[1].items) do
-			if not Scan.auctionData[itemString] and data[itemString] then
-				Scan:ProcessItem(itemString, data[itemString])
+			if not Scan.auctionData[itemString] then
+				if data[itemString] then
+					Scan:ProcessItem(itemString, data[itemString])
+				end
 				TSM.Manage:ProcessScannedItem(itemString)
 			end
 		end
