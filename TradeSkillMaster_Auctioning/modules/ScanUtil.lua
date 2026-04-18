@@ -102,67 +102,65 @@ function Scan:ScanNextFilter()
 	TSMAPI.AuctionScan:RunQuery(Scan.filterList[1], CallbackHandler, true, nil, nil, true)
 end
 
--- 【新增函数】合并拍卖数据（保证只保留前5条最低价）
+local function SortRecordsByBuyoutAsc(a, b)
+	local aBuyout = a.buyout or math.huge
+	local bBuyout = b.buyout or math.huge
+	if aBuyout ~= bBuyout then
+		return aBuyout < bBuyout
+	end
+	return (a.displayedBid or math.huge) < (b.displayedBid or math.huge)
+end
+
+-- 按价格升序排序，保留前 N 条最低价；额外保留所有玩家自己（含小号）的拍卖，
+-- 否则 GetPlayerAuctionCount 会数不到高于 top N 的自有挂单，导致发布上限失效。
+local function TrimRecordsKeepPlayer(records)
+	if #records <= EARLY_STOP_LIMIT then return records end
+
+	table.sort(records, SortRecordsByBuyoutAsc)
+
+	local limitedRecords = {}
+	for i = 1, EARLY_STOP_LIMIT do
+		limitedRecords[i] = records[i]
+	end
+	for i = EARLY_STOP_LIMIT + 1, #records do
+		if records[i]:IsPlayer() then
+			tinsert(limitedRecords, records[i])
+		end
+	end
+	return limitedRecords
+end
+
+-- 合并拍卖数据（保留前 N 条最低价 + 玩家自己的所有挂单）
 function Scan:MergeAuctionData(itemString, newAuctionItem)
 	if not Scan.auctionData[itemString] or not newAuctionItem then return end
-	
+
 	local existing = Scan.auctionData[itemString]
+	-- 让新来的记录在 IsPlayer() 判定时能复用现有的 alts 表，
+	-- 否则 record.parent (= newAuctionItem) 的 alts 为空，小号挂单会漏判。
+	newAuctionItem:SetAlts(existing.alts)
+
 	local newRecords = newAuctionItem.records or {}
-	
-	-- 合并记录
 	for _, record in ipairs(newRecords) do
 		tinsert(existing.records, record)
 	end
-	
-	-- 重新排序并只保留前5条
-	table.sort(existing.records, function(a, b)
-		local aBuyout = a.buyout or math.huge
-		local bBuyout = b.buyout or math.huge
-		if aBuyout ~= bBuyout then
-			return aBuyout < bBuyout
-		end
-		return (a.displayedBid or math.huge) < (b.displayedBid or math.huge)
-	end)
-	
-	-- 只保留前5条
-	local limitedRecords = {}
-	for i = 1, min(EARLY_STOP_LIMIT, #existing.records) do
-		limitedRecords[i] = existing.records[i]
-	end
-	existing.records = limitedRecords
-	
-	-- 重新生成compact records
+
+	existing.records = TrimRecordsKeepPlayer(existing.records)
+	existing.shouldCompact = true
 	existing:PopulateCompactRecords()
 end
 
 function Scan:ProcessItem(itemString, auctionItem)
 	if not itemString or not auctionItem then return end
-	
-	-- 【优化】在处理前就限制数量，提升性能
-	if auctionItem.records and #auctionItem.records > EARLY_STOP_LIMIT then
-		-- 按价格排序（从低到高）
-		table.sort(auctionItem.records, function(a, b)
-			local aBuyout = a.buyout or math.huge
-			local bBuyout = b.buyout or math.huge
-			if aBuyout ~= bBuyout then
-				return aBuyout < bBuyout
-			end
-			return (a.displayedBid or math.huge) < (b.displayedBid or math.huge)
-		end)
-		
-		-- 只保留前5条最低价
-		local limitedRecords = {}
-		for i = 1, EARLY_STOP_LIMIT do
-			if auctionItem.records[i] then
-				limitedRecords[i] = auctionItem.records[i]
-			end
-		end
-		auctionItem.records = limitedRecords
+
+	-- SetAlts 必须在裁剪之前，否则 IsPlayer() 只能识别当前角色，小号挂单会被裁掉。
+	auctionItem:SetAlts(TSM.db.factionrealm.player)
+
+	if auctionItem.records then
+		auctionItem.records = TrimRecordsKeepPlayer(auctionItem.records)
 	end
-	
+
 	auctionItem:SetRecordParams({"GetItemBuyout", "GetItemDisplayedBid", "seller", "count"})
 	auctionItem:PopulateCompactRecords()
-	auctionItem:SetAlts(TSM.db.factionrealm.player)
 	if #auctionItem.records > 0 then
 		auctionItem:SetMarketValue(TSMAPI:GetItemValue(itemString, "DBMarket"))
 		Scan.auctionData[itemString] = auctionItem
