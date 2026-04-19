@@ -67,34 +67,15 @@ function private.Create(parent)
 	helpText4:SetJustifyV("CENTER")
 	helpText4:SetText(L["NOTE: The scan must be stopped before you can buy anything."])
 
-	-- 目标卖家过滤（留空=所有人；多个用逗号分隔）——用于反秒压 bot 场景
-	local sellerLabel = TSMAPI.GUI:CreateLabel(frame)
-	sellerLabel:SetPoint("TOPLEFT", helpText4, "BOTTOMLEFT", 0, -5)
-	sellerLabel:SetHeight(20)
-	sellerLabel:SetText("目标卖家:")
-
-	local sellerBox = TSMAPI.GUI:CreateInputBox(frame)
-	sellerBox:SetPoint("TOPLEFT", sellerLabel, "TOPRIGHT", 5, 0)
-	sellerBox:SetPoint("TOPRIGHT", helpText4, "BOTTOMRIGHT", 0, -5)
-	sellerBox:SetHeight(20)
-	sellerBox:SetText(TSM.db.global.sniperSellerFilter or "")
-	sellerBox:SetScript("OnEnterPressed", function(self)
-		TSM.db.global.sniperSellerFilter = self:GetText()
-		self:ClearFocus()
-	end)
-	sellerBox:SetScript("OnEditFocusLost", function(self)
-		TSM.db.global.sniperSellerFilter = self:GetText()
-	end)
-
 	local startBtn = TSMAPI.GUI:CreateButton(frame, 16)
-	startBtn:SetPoint("TOPLEFT", sellerBox, "BOTTOMLEFT", 0, -5)
+	startBtn:SetPoint("TOPLEFT", helpText4, "BOTTOMLEFT", 0, -5)
 	startBtn:SetWidth((frame:GetWidth() / 2) - 2.5)
 	startBtn:SetHeight(20)
 	startBtn:SetText(L["Start Sniper"])
 	startBtn:SetScript("OnClick", private.StartSniperSearch)
 
 	local stopBtn = TSMAPI.GUI:CreateButton(frame, 16)
-	stopBtn:SetPoint("TOPRIGHT", sellerBox, "BOTTOMRIGHT", 0, -5)
+	stopBtn:SetPoint("TOPRIGHT", helpText4, "BOTTOMRIGHT", 0, -5)
 	stopBtn:SetWidth((frame:GetWidth() / 2) - 2.5)
 	stopBtn:SetHeight(20)
 	stopBtn:SetText(L["Stop Sniper"])
@@ -255,27 +236,9 @@ function private.SniperScanCallback(event, itemString, auctionItem)
 			end
 			customPrice = TSM:GetMaxPrice(TSM.db.global.sniperCustomPrice, itemString)
 		end
-		-- 反秒压 bot：若设置了"目标卖家"，则只保留这些卖家的记录，其他玩家全部过滤掉
-		local sellerFilter
-		do
-			local raw = TSM.db.global.sniperSellerFilter
-			if type(raw) == "string" and raw ~= "" then
-				sellerFilter = {}
-				for name in string.gmatch(raw, "[^,]+") do
-					name = strlower(strtrim(name))
-					if name ~= "" then
-						sellerFilter[name] = true
-					end
-				end
-				if not next(sellerFilter) then sellerFilter = nil end
-			end
-		end
 		auctionItem:FilterRecords(function(record)
 			local itemBuyout = record:GetItemBuyout()
 			if not itemBuyout or itemBuyout == 0 then return true end
-			if sellerFilter and not sellerFilter[strlower(record.seller or "")] then
-				return true
-			end
 			if TSM.db.global.sniperVendorPrice and vendorPrice and itemBuyout <= vendorPrice then
 				return false
 			end

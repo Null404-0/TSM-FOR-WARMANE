@@ -57,7 +57,25 @@ function private.ScanCallback(event, ...)
 		if not operation then return end
 		local operationPrice = TSM:GetMaxPrice(operation.maxPrice, itemString)
 		if not operationPrice then return end
+		-- 反秒压 bot：如果填了"目标卖家"，只保留这些卖家的拍卖
+		local sellerFilter
+		do
+			local raw = operation.sniperSeller
+			if type(raw) == "string" and raw ~= "" then
+				sellerFilter = {}
+				for name in string.gmatch(raw, "[^,]+") do
+					name = strlower(strtrim(name))
+					if name ~= "" then
+						sellerFilter[name] = true
+					end
+				end
+				if not next(sellerFilter) then sellerFilter = nil end
+			end
+		end
 		auctionItem:FilterRecords(function(record)
+				if sellerFilter and not sellerFilter[strlower(record.seller or "")] then
+					return true
+				end
 				if operation.evenStacks and record.count % 5 ~= 0 then
 					return true
 				end
