@@ -33,7 +33,6 @@ local savedDBDefaults = {
 		sniperVendorPrice = true,
 		sniperMaxPrice = true,
 		sniperCustomPrice = "0c",
-		sniperSellerFilter = "",
 	},
 }
 
@@ -71,6 +70,7 @@ TSM.operationDefaults = {
 	maxPrice = 1,
 	evenStacks = nil,
 	showAboveMaxPrice = nil,
+	sniperSeller = "",
 	ignorePlayer = {},
 	ignoreFactionrealm = {},
 	relationships = {},

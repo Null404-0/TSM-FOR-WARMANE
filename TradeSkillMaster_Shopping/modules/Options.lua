@@ -319,6 +319,14 @@ function Options:DrawOperationGeneral(container, operationName)
 							disabled = operation.relationships.evenStacks,
 							tooltip = L["If checked, only auctions posted in even quantities will be considered for purchasing."],
 						},
+						{
+							type = "EditBox",
+							label = L["Target Seller(s) (blank = all)"],
+							settingInfo = { operation, "sniperSeller" },
+							relativeWidth = 1,
+							disabled = operation.relationships.sniperSeller,
+							tooltip = L["If set, only auctions from these sellers will be shown when scanning this operation's items. Separate multiple names with commas. Case-insensitive. Leave blank for normal behavior."],
+						},
 					},
 				},
 			},
@@ -335,6 +343,7 @@ function Options:DrawOperationRelationships(container, operationName)
 			{ key = "maxPrice", label = L["Maximum Auction Price (per item)"] },
 			{ key = "showAboveMaxPrice", label = L["Show Auctions Above Max Price"] },
 			{ key = "evenStacks", label = L["Even (5/10/15/20) Stacks Only"] },
+			{ key = "sniperSeller", label = L["Target Seller(s) (blank = all)"] },
 		},
 	}
 	TSMAPI:ShowOperationRelationshipTab(TSM, container, TSM.operations[operationName], settingInfo)
