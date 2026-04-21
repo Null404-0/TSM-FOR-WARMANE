@@ -163,3 +163,5 @@ L["This is the maximum item level that the Other > Disenchant search will displa
 L["This is the minimum item level that the Other > Disenchant search will display results for."] = "这是 Other（其他）> Disenchant（分解）搜索显示结果的最低物品等级。"
 L["Warning: The max disenchant level must be higher than the min disenchant level."] = "警告：最高分解等级必须高于最低分解等级。"
 L["Warning: The min disenchant level must be lower than the max disenchant level."] = "警告：最低分解等级必须低于最高分解等级。"
+L["Target Seller(s) (blank = all)"] = "目标卖家（留空=所有人）"
+L["If set, only auctions from these sellers will be shown when scanning this operation's items. Separate multiple names with commas. Case-insensitive. Leave blank for normal behavior."] = "如果填写，扫描本操作涉及的物品时只会显示这些卖家的拍卖。多个卖家用英文逗号分隔，不区分大小写。留空即为正常扫描行为。"
