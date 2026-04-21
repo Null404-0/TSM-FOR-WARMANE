@@ -49,6 +49,18 @@ function private.ScanCallback(event, ...)
 			maxPrice = maxPrice and max(maxPrice, operationPrice) or operationPrice
 		end
 		return maxPrice
+	elseif event == "fastScan" then
+		-- 反秒压 bot：本次 query 涉及的所有物品都设了"目标卖家"时，只扫第 1 页足矣
+		-- （bot 的恶意低价必然是最低价，定在第 1 页）
+		local filter = ...
+		if not filter or not filter.items or #filter.items == 0 then return false end
+		for _, itemString in ipairs(filter.items) do
+			local op = private.itemOperations[itemString]
+			if not (op and type(op.sniperSeller) == "string" and op.sniperSeller ~= "") then
+				return false
+			end
+		end
+		return true
 	elseif event == "process" then
 		local itemString, auctionItem = ...
 		-- filter out auctions according to operation settings
