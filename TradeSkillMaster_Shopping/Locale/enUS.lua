@@ -159,3 +159,5 @@ L["Warning: The min disenchant level must be lower than the max disenchant level
 L["What to set the default undercut to when posting items with Shopping."] = true
 L["When in destroy mode, you simply enter a target item (ink/pigment, enchanting mat, gem, etc) into the search box to search for everything you can destroy to get that item."] = true
 L["When in normal mode, you may run simple and filtered searches of the auction house."] = true
+L["Target Seller(s) (blank = all)"] = true
+L["If set, only auctions from these sellers will be shown when scanning this operation's items. Separate multiple names with commas. Case-insensitive. Leave blank for normal behavior."] = true
