@@ -324,7 +324,10 @@ function private:ScanNextFilter()
 	end
 	pageStatus = {0, 1}
 	private:UpdateStatus("scan", private.numFilters-#private.filterList+1, private.numFilters)
-	TSMAPI.AuctionScan:RunQuery(private.filterList[1], private.ScanCallback, true, private.callback("filter", private.filterList[1]), true)
+	-- 询问 callback 是否对本次 query 启用 fastScan（只扫第 1 页）。反秒压 bot 场景下，
+	-- bot 的恶意低价必然在第 1 页，没必要把整个物品的几十页全扫完。
+	local fastScan = private.callback and private.callback("fastScan", private.filterList[1]) or false
+	TSMAPI.AuctionScan:RunQuery(private.filterList[1], private.ScanCallback, true, private.callback("filter", private.filterList[1]), true, fastScan)
 end
 
 function private:UpdateStatus(statusType, ...)
