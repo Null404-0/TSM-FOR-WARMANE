@@ -301,11 +301,27 @@ function private:ScanAuctions()
 
 	if private.scanType == "lastPage" then
 		return DoCallback("SCAN_LAST_PAGE_COMPLETE", private.data)
-	elseif private.query.page >= totalPages or (private.fastScan and private.query.page >= 1) then
-		-- 【优化】快速扫描模式：扫完第一页就完成
+	elseif private.query.page >= totalPages then
 		-- we have finished scanning this query
 		private:StopScanning()
 		return DoCallback("SCAN_COMPLETE", private.data)
+	elseif private.fastScan and private.query.page >= 1 then
+		-- 【修复】fastScan 不再"扫完页 1 必停"。WoW 的 QueryAuctionItems 是模糊名字匹配
+		-- （例如 query "复生雕文" 会带回 "亡者复生雕文" "无忧复生雕文"），同名前缀物品
+		-- 可能把目标挤到后续页。必须等 query.items 里所有 itemString 都收到数据才停。
+		local allTargetsSeen = true
+		if private.query.items then
+			for _, itemString in ipairs(private.query.items) do
+				if not private.data[itemString] then
+					allTargetsSeen = false
+					break
+				end
+			end
+		end
+		if allTargetsSeen then
+			private:StopScanning()
+			return DoCallback("SCAN_COMPLETE", private.data)
+		end
 	end
 
 	-- query the next page and continue scanning
