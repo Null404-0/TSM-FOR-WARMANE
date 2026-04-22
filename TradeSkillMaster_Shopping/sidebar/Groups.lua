@@ -95,6 +95,9 @@ function private.ScanCallback(event, ...)
 					return (record:GetItemBuyout() or 0) > operationPrice
 				end
 			end)
+		-- 过滤后若 records 全部被剔掉（例如设了"目标卖家"但本页没匹配），
+		-- 不能把空壳继续塞回 private.auctions，否则 UpdateRT 里 sort 会炸（a[1] == nil）
+		if #auctionItem.records == 0 then return end
 		auctionItem:SetMarketValue(operationPrice)
 		return auctionItem
 	elseif event == "done" then
