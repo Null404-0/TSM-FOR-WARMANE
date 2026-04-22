@@ -426,8 +426,14 @@ end
 
 function private:UpdateRT()
 	local rtData = {}
-	for _, obj in pairs(private.auctions) do
-		tinsert(rtData, obj)
+	for itemString, obj in pairs(private.auctions) do
+		-- 二次防御：把空壳（records 或 compactRecords 为空）清掉，
+		-- 否则 AuctionResultsTable:RefreshRowData 的 sort 会对 a[1]=nil 崩溃
+		if obj and obj.records and #obj.records > 0 and obj.compactRecords and #obj.compactRecords > 0 then
+			tinsert(rtData, obj)
+		else
+			private.auctions[itemString] = nil
+		end
 	end
 	private.searchFrame.rt:SetData(rtData)
 end
