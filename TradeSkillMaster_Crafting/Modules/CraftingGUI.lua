@@ -776,10 +776,10 @@ function GUI:CreateQueueFrame(parent)
 	line:SetHeight(height)
 
 	local stCols = {
-		{ name = L["Material Name"], width = 0.49, align = "Left" },
-		{ name = L["Need"], width = 0.115, align = "LEFT" },
-		{ name = L["Total"], width = 0.115, align = "LEFT" },
-		{ name = L["Cost"], width = 0.28, align = "LEFT" },
+		{ name = L["Material Name"], width = 0.42, align = "Left" },
+		{ name = L["Need"], width = 0.155, align = "LEFT" },
+		{ name = L["Total"], width = 0.155, align = "LEFT" },
+		{ name = L["Cost"], width = 0.27, align = "LEFT" },
 	}
 
 	local function MatOnEnter(_, data, col)
