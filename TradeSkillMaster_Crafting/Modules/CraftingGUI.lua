@@ -499,12 +499,29 @@ function GUI:ClearFilters()
 	GUI.frame.content.professionsTab.searchBar:ClearFocus()
 end
 
-function GUI:CastTradeSkill(index, quantity, vellum)
+function GUI:CastTradeSkill(index, quantity, vellum, vellumItemID)
 	SelectTradeSkill(index)
 	quantity = vellum and 1 or quantity
 	DoTradeSkill(index, quantity)
 	GUI.isCrafting = { quantity = quantity, spellID = TSM.Util:GetSpellID(index) }
 	if vellum then
+		-- zhCN client localizes Armor Vellum III and Weapon Vellum III to the
+		-- same name, so UseItemByName picks the wrong one. Find the exact
+		-- vellum by itemID in bags first.
+		if vellumItemID then
+			for bag = 0, NUM_BAG_SLOTS do
+				for slot = 1, GetContainerNumSlots(bag) do
+					local link = GetContainerItemLink(bag, slot)
+					if link then
+						local id = tonumber(strmatch(link, "item:(%d+)"))
+						if id == vellumItemID then
+							UseContainerItem(bag, slot)
+							return
+						end
+					end
+				end
+			end
+		end
 		UseItemByName(vellum)
 	end
 end
@@ -747,7 +764,7 @@ function GUI:CreateQueueFrame(parent)
 				end
 				GUI:UpdateQueue()
 			elseif data.index then
-				GUI:CastTradeSkill(data.index, min(data.canCraft, data.numQueued), data.velName)
+				GUI:CastTradeSkill(data.index, min(data.canCraft, data.numQueued), data.velName, data.velItemID)
 			end
 		end
 	end
@@ -874,7 +891,7 @@ function GUI:CreateQueueFrame(parent)
 	-- end)
 	btn:SetScript("OnClick", function(self)
 		if UnitCastingInfo("player") or not GUI.craftNextInfo or not self:IsVisible() then return end
-		GUI:CastTradeSkill(GUI.craftNextInfo.index, GUI.craftNextInfo.quantity, GUI.craftNextInfo.velName)
+		GUI:CastTradeSkill(GUI.craftNextInfo.index, GUI.craftNextInfo.quantity, GUI.craftNextInfo.velName, GUI.craftNextInfo.velItemID)
 		self:Disable()
 	end)
 	frame.craftNextbtn = btn
@@ -1829,19 +1846,21 @@ function GUI:UpdateQueue()
 					for spellID, numQueued in pairs(stage.crafts) do
 						local canCraft = math.huge
 
-						local velName
+						local velName, velItemID
 						if TSM.VellumInfo[spellID] then
-							velName = GetItemInfo(TSM.VellumInfo[spellID])
+							velItemID = TSM.VellumInfo[spellID]
+							velName = GetItemInfo(velItemID)
 						end
-						
+
 						for itemID, quantity in pairs(TSM.db.factionrealm.crafts[spellID].mats) do
-						
+
 							local MatName = GetItemInfo(itemID)
 							if MatName ~= nil and velName ~= nil and strfind(MatName, "Vellum") then
 								local NewItemString = CheapestVellum(itemID)
 								if itemID ~= NewItemString then
 									itemID = NewItemString
 									velName = GetItemInfo(itemID)
+									velItemID = tonumber(strmatch(itemID, "item:(%d+)"))
 								end
 							end
 						
@@ -1898,6 +1917,7 @@ function GUI:UpdateQueue()
 							numQueued = numQueued,
 							index = craftIndex,
 							velName = velName,
+							velItemID = velItemID,
 							profit = select(3, TSM.Cost:GetCraftPrices(spellID)),
 							profession = GetTradeSkillLine(),
 						}
@@ -1922,7 +1942,7 @@ function GUI:UpdateQueue()
 
 					for _, row in ipairs(craftRows) do
 						if not GUI.craftNextInfo and row.index and row.canCraft > 0 then
-							GUI.craftNextInfo = { spellID = row.spellID, index = row.index, quantity = min(row.numQueued, row.canCraft), velName = row.velName, isCrafting = 0 }
+							GUI.craftNextInfo = { spellID = row.spellID, index = row.index, quantity = min(row.numQueued, row.canCraft), velName = row.velName, velItemID = row.velItemID, isCrafting = 0 }
 						end
 						tinsert(stData, row)
 					end
