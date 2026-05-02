@@ -14,6 +14,8 @@ TSMAPI.AuctionScan = {}
 local RETRY_DELAY = 2
 local MAX_RETRIES = 4
 local BASE_DELAY = 0.10 -- time to delay for before trying to scan a page again when it isn't fully loaded
+local QUERY_TIMEOUT = 5 -- seconds to wait for AUCTION_ITEM_LIST_UPDATE before re-sending the query (private servers occasionally drop the event)
+local MAX_QUERY_RETRIES = 3
 local private = { callbackHandler = nil, query = {}, options = {}, data = {}, isScanning = nil }
 TSMAPI:RegisterForTracing(private, "TradeSkillMaster.AuctionScanning_private")
 local scanCache = {}
@@ -33,6 +35,7 @@ local function eventHandler(event)
 	if event == "AUCTION_HOUSE_CLOSED" then
 		-- auction house was closed, make sure all scanning is stopped
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+		TSMAPI:CancelFrame("queryTimeout")
 		private.auctionHouseShown = false
 		DoCallback("INTERRUPTED")
 		private:StopScanning()
@@ -40,6 +43,8 @@ local function eventHandler(event)
 		-- gets called whenever the AH window is updated (something is shown in the results section)
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
 		TSMAPI:CancelFrame("updateDelay")
+		TSMAPI:CancelFrame("queryTimeout")
+		private.queryTimeoutCount = 0
 		-- now that our query was successful, we can get our data
 		private:ScanAuctions()
 	end
@@ -203,6 +208,21 @@ function private:SendQuery()
 		-- [exact]  cardinal ruby  0   0  nil  0   0  0  0   0
 		-- [normal] cardinal ruby nil nil nil nil nil 0 nil nil
 		QueryAuctionItems(private.query.name, private.query.minLevel, private.query.maxLevel, private.query.invType, private.query.class, private.query.subClass, private.query.page, private.query.usable, private.query.quality)
+		-- Watchdog: on Warmane the AUCTION_ITEM_LIST_UPDATE event sometimes never fires,
+		-- which would otherwise hang the scan. If we don't see the event in time, re-send the query.
+		TSMAPI:CreateTimeDelay("queryTimeout", QUERY_TIMEOUT, function()
+			if not private.isScanning then return end
+			if not AuctionScanning:IsEventRegistered("AUCTION_ITEM_LIST_UPDATE") then return end
+			AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+			private.queryTimeoutCount = (private.queryTimeoutCount or 0) + 1
+			if private.queryTimeoutCount > MAX_QUERY_RETRIES then
+				private.queryTimeoutCount = 0
+				DoCallback("INTERRUPTED")
+				private:StopScanning()
+				return
+			end
+			private:SendQuery()
+		end)
 	else
 		-- run delay timer then try again to scan
 		TSMAPI:CreateTimeDelay("queryDelay", 0.05, private.SendQuery)
@@ -383,6 +403,8 @@ function private:StopScanning()
 	-- cancel any delays that might still be running
 	TSMAPI:CancelFrame("queryDelay")
 	TSMAPI:CancelFrame("updateDelay")
+	TSMAPI:CancelFrame("queryTimeout")
+	private.queryTimeoutCount = 0
 	AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
 	private.isScanning = nil
 	private.pageTemp = nil
