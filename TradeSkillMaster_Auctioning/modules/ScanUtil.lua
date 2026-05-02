@@ -17,7 +17,14 @@ Scan.skipped = {}
 local EARLY_STOP_LIMIT = 5  -- 可调整为 2-10
 
 
+local function dbg(fmt, ...)
+	if not _G.TSM_AUCTION_DEBUG then return end
+	local msg = (select("#", ...) > 0) and string.format(fmt, ...) or fmt
+	DEFAULT_CHAT_FRAME:AddMessage("|cff88ccff[TSM-DBG/Auct]|r " .. tostring(msg))
+end
+
 local function CallbackHandler(event, ...)
+	dbg("CallbackHandler event=%s filtersLeft=%s", tostring(event), tostring(Scan.filterList and #Scan.filterList))
 	if event == "QUERY_COMPLETE" then
 		local filterList = ...
 		local numItems = 0
@@ -93,11 +100,14 @@ function Scan:StartItemScan(itemList)
 end
 
 function Scan:ScanNextFilter()
+	dbg("ScanNextFilter: %d filters remaining", #Scan.filterList)
 	if #Scan.filterList == 0 then
 		TSM.Manage:UpdateStatus("scan", Scan.numFilters, Scan.numFilters)
 		return TSM.Manage:ScanComplete()
 	end
 	TSM.Manage:UpdateStatus("scan", Scan.numFilters-#Scan.filterList, Scan.numFilters)
+	local f = Scan.filterList[1]
+	dbg("ScanNextFilter: starting filter name=%q items=%d", tostring(f and f.name), f and f.items and #f.items or 0)
 	-- 【优化】启用快速扫描模式：只扫第一页
 	TSMAPI.AuctionScan:RunQuery(Scan.filterList[1], CallbackHandler, true, nil, nil, true)
 end
