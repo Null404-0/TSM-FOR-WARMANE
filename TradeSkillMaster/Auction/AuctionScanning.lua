@@ -24,16 +24,25 @@ local CACHE_DECAY_PER_DAY = 5
 local CACHE_AUTO_HIT_TIME = 10 * 60
 local SECONDS_PER_DAY = 60 * 60 * 24
 
+-- Debug logger. Toggle via `/run TSM_AUCTION_DEBUG=true` (or false) in-game.
+local function dbg(fmt, ...)
+	if not _G.TSM_AUCTION_DEBUG then return end
+	local msg = (select("#", ...) > 0) and string.format(fmt, ...) or fmt
+	DEFAULT_CHAT_FRAME:AddMessage("|cff88ff88[TSM-DBG]|r " .. tostring(msg))
+end
 
-local function DoCallback(...)
+
+local function DoCallback(event, ...)
+	dbg("DoCallback event=%s page=%s", tostring(event), tostring(private.query and private.query.page))
 	if type(private.callbackHandler) == "function" then
-		private.callbackHandler(...)
+		private.callbackHandler(event, ...)
 	end
 end
 
 local function eventHandler(event)
 	if event == "AUCTION_HOUSE_CLOSED" then
 		-- auction house was closed, make sure all scanning is stopped
+		dbg("AUCTION_HOUSE_CLOSED")
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
 		TSMAPI:CancelFrame("queryTimeout")
 		private.auctionHouseShown = false
@@ -41,6 +50,7 @@ local function eventHandler(event)
 		private:StopScanning()
 	elseif event == "AUCTION_ITEM_LIST_UPDATE" then
 		-- gets called whenever the AH window is updated (something is shown in the results section)
+		dbg("AUCTION_ITEM_LIST_UPDATE page=%s", tostring(private.query and private.query.page))
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
 		TSMAPI:CancelFrame("updateDelay")
 		TSMAPI:CancelFrame("queryTimeout")
@@ -197,12 +207,13 @@ end
 
 -- sends a query to the AH frame once it is ready to be queried (uses frame as a delay)
 function private:SendQuery()
-	if not private.isScanning then return end
+	if not private.isScanning then dbg("SendQuery: not scanning, abort"); return end
 
 	if CanSendAuctionQuery() then
 		-- stop delay timer
 		TSMAPI:CancelFrame("queryDelay")
 
+		dbg("SendQuery page=%s name=%q (firing QueryAuctionItems)", tostring(private.query.page), tostring(private.query.name))
 		-- Query the auction house (then waits for AUCTION_ITEM_LIST_UPDATE to fire)
 		AuctionScanning:RegisterEvent("AUCTION_ITEM_LIST_UPDATE", eventHandler)
 		-- [exact]  cardinal ruby  0   0  nil  0   0  0  0   0
@@ -211,11 +222,13 @@ function private:SendQuery()
 		-- Watchdog: on Warmane the AUCTION_ITEM_LIST_UPDATE event sometimes never fires,
 		-- which would otherwise hang the scan. If we don't see the event in time, re-send the query.
 		TSMAPI:CreateTimeDelay("queryTimeout", QUERY_TIMEOUT, function()
-			if not private.isScanning then return end
-			if not AuctionScanning:IsEventRegistered("AUCTION_ITEM_LIST_UPDATE") then return end
+			if not private.isScanning then dbg("watchdog: not scanning, ignore"); return end
+			if not AuctionScanning:IsEventRegistered("AUCTION_ITEM_LIST_UPDATE") then dbg("watchdog: event already gone, ignore"); return end
+			dbg("watchdog FIRED page=%s retries=%d (no AUCTION_ITEM_LIST_UPDATE in %ds)", tostring(private.query.page), (private.queryTimeoutCount or 0)+1, QUERY_TIMEOUT)
 			AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
 			private.queryTimeoutCount = (private.queryTimeoutCount or 0) + 1
 			if private.queryTimeoutCount > MAX_QUERY_RETRIES then
+				dbg("watchdog: max retries (%d) hit -> INTERRUPTED", MAX_QUERY_RETRIES)
 				private.queryTimeoutCount = 0
 				DoCallback("INTERRUPTED")
 				private:StopScanning()
@@ -225,15 +238,17 @@ function private:SendQuery()
 		end)
 	else
 		-- run delay timer then try again to scan
+		dbg("SendQuery: CanSendAuctionQuery=false, retry in 0.05s")
 		TSMAPI:CreateTimeDelay("queryDelay", 0.05, private.SendQuery)
 	end
 end
 
 --scans the currently shown page of auctions and collects all the data
 function private:ScanAuctions()
-	if not private.isScanning then return end
+	if not private.isScanning then dbg("ScanAuctions: not scanning, abort"); return end
 	local shown, total = GetNumAuctionItems("list")
 	local totalPages = ceil(total / NUM_AUCTION_ITEMS_PER_PAGE)
+	dbg("ScanAuctions page=%s shown=%d total=%d totalPages=%d", tostring(private.query.page), shown, total, totalPages)
 	
 	if private.scanType == "numPages" then
 		local cacheData = TSM.db.factionrealm.numPagesCache[private.query.cacheKey]
@@ -263,6 +278,7 @@ function private:ScanAuctions()
 
 	-- check that we have good data
 	if dataIsBad or IsDuplicatePage() then
+		dbg("ScanAuctions: bad/dup page (badData=%s dup=%s retries=%d hardRetry=%s)", tostring(dataIsBad), tostring(IsDuplicatePage()), private.query.retries, tostring(private.query.hardRetry))
 		if private.query.retries < MAX_RETRIES then
 			if private.query.hardRetry then
 				-- Hard retry
