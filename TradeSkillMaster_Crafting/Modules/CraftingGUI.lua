@@ -16,6 +16,22 @@ local private = {}
 private.gather = {}
 private.shown = {}
 
+-- 补货材料列表的排序：先分大类，再按类内固定顺序。
+-- 没在表里的材料归到末尾，按名字排序。开源后其他人想加自己的材料/专业直接扩这两张表。
+local MAT_CATEGORY = {
+	-- 墨水（铭文）
+	["午夜墨水"] = 1, ["狮王墨水"] = 1, ["碧火墨水"] = 1, ["星空墨水"] = 1,
+	["闪光墨水"] = 1, ["虚灵墨水"] = 1, ["海洋墨水"] = 1,
+	-- 羊皮纸
+	["普通的羊皮纸"] = 2, ["轻羊皮纸"] = 2, ["重羊皮纸"] = 2, ["坚韧羊皮纸"] = 2,
+	["废弃羊皮纸"] = 2,
+}
+local MAT_INK_ORDER = {
+	["午夜墨水"] = 1, ["狮王墨水"] = 2, ["碧火墨水"] = 3,
+	["星空墨水"] = 4, ["闪光墨水"] = 5, ["虚灵墨水"] = 6,
+	["海洋墨水"] = 99, -- 顶级墨水自制，排末尾不挡商店动线
+}
+
 local function GetProfessionInfo(id)
 	-- store primary profession names
 	local primary = {}
@@ -2013,7 +2029,20 @@ function GUI:UpdateQueue()
 		tinsert(stData, row)
 	end
 
-	sort(stData, function(a, b) return a.order < b.order end)
+	sort(stData, function(a, b)
+		local na = a.cols[1].args[1]
+		local nb = b.cols[1].args[1]
+		local ca = MAT_CATEGORY[na] or 99
+		local cb = MAT_CATEGORY[nb] or 99
+		if ca ~= cb then return ca < cb end
+		if ca == 1 then
+			local ia = MAT_INK_ORDER[na] or 50
+			local ib = MAT_INK_ORDER[nb] or 50
+			if ia ~= ib then return ia < ib end
+		end
+		if a.order ~= b.order then return a.order < b.order end
+		return na < nb
+	end)
 
 	GUI.frame.queue.matST:SetData(stData)
 	-- TSMAPI:CreateTimeDelay("gatheringUpdateThrottle", 0.3, GUI.UpdateGathering)	
