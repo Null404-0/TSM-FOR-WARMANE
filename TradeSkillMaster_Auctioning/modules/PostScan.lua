@@ -213,6 +213,11 @@ function Post:ShouldPost(itemString, operation, numInBags)
 	elseif isPlayer or isWhitelist then
 		-- Either the player or a whitelist person is the lowest teir so use this tiers quantity of items
 		activeAuctions = TSM.Scan:GetPlayerAuctionCount(itemString, buyout or 0, bid or 0, perAuction, operation)
+	else
+		-- 对手最低、走压价。原版这里直接 activeAuctions=0，导致 postCap 只看"新档位"，
+		-- 跨档位的旧挂单不算 → 多轮扫描会累积出超 cap 的挂单（用户实际看到过 10+）。
+		-- 用"该物品我自己所有档位的总数"做兜底，让 postCap 是真正的硬上限。
+		activeAuctions = TSM.Scan:GetPlayerTotalAuctionCount(itemString, operation)
 	end
 
 	-- If we have a post cap of 20, and 10 active auctions, but we can only have 5 of the item then this will only let us create 5 auctions
