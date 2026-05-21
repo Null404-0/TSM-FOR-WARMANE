@@ -1,3 +1,16 @@
+v2.9.0 (Warmane fork)
+*Auctioning: post items with no AH listings instead of silently dropping them (#2).
+*Auctioning: preserve player-owned records during top-N trim so post cap is respected (#3).
+*Shopping: added per-operation target-seller filter for Sniper (anti-undercut-bot) (#4, #5, #6).
+*Shopping: fastScan group queries when every item has a seller filter (#7).
+*Shopping: drop empty auctionItem shells to prevent sort nil-index (#8).
+*AuctionScan: don't stop fastScan until every query item is in data (#9).
+*Crafting: widen Need/Total columns in materials list to fit 5-digit values (#10).
+*Crafting: locate vellum by itemID to work around zhCN duplicate-name bug (#11).
+*AuctionScanning: watchdog for missing AUCTION_ITEM_LIST_UPDATE event (#12).
+*Crafting: sort restock mats by vendor category + ink order (#14).
+*AuctionScanning: blank seller names no longer trigger whole-page retry (#15).
+
 v2.8.3
 *Made TSMAPI:IsSoulbound() MUCH more efficient which will GREATLY reduce the interface log of all modules..
 
