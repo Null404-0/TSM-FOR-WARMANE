@@ -10,8 +10,8 @@ v2.9.0 (Warmane fork)
 *AuctionScanning: watchdog for missing AUCTION_ITEM_LIST_UPDATE event (#12).
 *Crafting: sort restock mats by vendor category + ink order (#14).
 *AuctionScanning: blank seller names no longer trigger whole-page retry (#15).
-*Auctioning: enforce postCap across ALL price tiers in the undercut branch (was previously per-tier only, accumulating over multiple scans).
 *Auctioning: blank seller (owner="?") auctions now go through normal undercut path instead of skipping the whole item when a whitelist is set.
+*Auctioning: revert overly-aggressive postCap-across-all-tiers check (#16) — it blocked legitimate undercut posts when player already had cap-worth of higher-priced auctions; the proper fix relies on Cancel-Scan running before Post-Scan.
 
 v2.8.3
 *Made TSMAPI:IsSoulbound() MUCH more efficient which will GREATLY reduce the interface log of all modules..
