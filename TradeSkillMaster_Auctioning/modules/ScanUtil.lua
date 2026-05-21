@@ -199,7 +199,7 @@ end
 function Scan:GetPlayerAuctionCount(itemString, findBuyout, findBid, findQuantity, operation)
 	findBuyout = floor(findBuyout)
 	findBid = floor(findBid)
-	
+
 	local quantity = 0
 	for _, record in ipairs(Scan.auctionData[itemString].compactRecords) do
 		if not Scan:ShouldIgnoreAuction(record, operation) and record:IsPlayer() then
@@ -208,7 +208,23 @@ function Scan:GetPlayerAuctionCount(itemString, findBuyout, findBid, findQuantit
 			end
 		end
 	end
-	
+
+	return quantity
+end
+
+-- Total number of THIS player's active auctions for the item across ALL price tiers / stack sizes.
+-- 用在"对手压价"分支：原本 PostScan 只数目标档位，跨档位的旧挂单不算，导致 postCap 被绕过。
+function Scan:GetPlayerTotalAuctionCount(itemString, operation)
+	local auctionItem = Scan.auctionData[itemString]
+	if not auctionItem then return 0 end
+
+	local quantity = 0
+	for _, record in ipairs(auctionItem.compactRecords) do
+		if not Scan:ShouldIgnoreAuction(record, operation) and record:IsPlayer() then
+			quantity = quantity + (record.numAuctions or 0)
+		end
+	end
+
 	return quantity
 end
 
@@ -250,9 +266,9 @@ function Scan:GetLowestAuction(auctionItem, operation)
 			end
 		end
 	end
-	if owner == "?" and next(TSM.db.factionrealm.whitelist) then
-		invalidSellerEntry = true
-	end
+	-- 空白名玩家（owner == "?"）一律当成"非白名单的对手"，不再因为白名单未知就跳过该物品。
+	-- Warmane 上滥用空白名的几乎都是压价机器人，应当按正常 undercut 流程压价发布。
+	-- postCap 由 PostScan 的对手压价分支用 GetPlayerTotalAuctionCount 兜底，不会越限。
 
 	-- Now that we know the lowest, find out if this price "level" is a friendly person
 	-- the reason we do it like this, is so if Apple posts an item at 50g, Orange posts one at 50g
@@ -266,15 +282,12 @@ function Scan:GetLowestAuction(auctionItem, operation)
 				if not TSM.db.factionrealm.whitelist[strlower(record.seller)] then
 					isWhitelist = nil
 				end
-				
+
 				-- If the lowest we found was from the player, but someone else is matching it (and they aren't on our white list)
 				-- then we swap the owner to that person
 				buyout, bid, owner = recordBuyout, record:GetItemDisplayedBid(), record.seller
 			end
 		end
-	end
-	if owner == "?" and next(TSM.db.factionrealm.whitelist) then
-		invalidSellerEntry = true
 	end
 
 	return buyout, bid, owner, isWhitelist, isPlayer, invalidSellerEntry
