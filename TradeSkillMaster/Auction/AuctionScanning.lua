@@ -76,7 +76,10 @@ function private:ScanAuctionPage(resolveSellers)
 		local count, _, _, _, _, _, buyout, _, _, seller = select(3, GetAuctionItemInfo("list", i))
 		local itemString = TSMAPI:GetItemString(GetAuctionItemLink("list", i))
 		auctions[i] = { itemString = itemString, index = i, count = count, buyout = buyout, seller = seller }
-		if not (itemString and buyout and count and (seller or not resolveSellers or buyout == 0)) then
+		-- seller 缺失不算 badData：Warmane 上存在使用特殊字符绕过名字校验的玩家，服务器会一直返回 nil seller，
+		-- 重试只会徒增 8s+4 次硬重试的浪费（见上层 ScanAuctions 的 MAX_RETRIES/RETRY_DELAY 路径）。
+		-- AddAuctionRecord 会把 nil seller 写成 "?"，Auctioning 看到 "?" 会自行 skip 该物品。
+		if not (itemString and buyout and count) then
 			badData = true
 		end
 	end
