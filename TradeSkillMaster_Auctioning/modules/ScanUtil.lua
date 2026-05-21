@@ -212,22 +212,6 @@ function Scan:GetPlayerAuctionCount(itemString, findBuyout, findBid, findQuantit
 	return quantity
 end
 
--- Total number of THIS player's active auctions for the item across ALL price tiers / stack sizes.
--- 用在"对手压价"分支：原本 PostScan 只数目标档位，跨档位的旧挂单不算，导致 postCap 被绕过。
-function Scan:GetPlayerTotalAuctionCount(itemString, operation)
-	local auctionItem = Scan.auctionData[itemString]
-	if not auctionItem then return 0 end
-
-	local quantity = 0
-	for _, record in ipairs(auctionItem.compactRecords) do
-		if not Scan:ShouldIgnoreAuction(record, operation) and record:IsPlayer() then
-			quantity = quantity + (record.numAuctions or 0)
-		end
-	end
-
-	return quantity
-end
-
 -- gets the buyout / bid of the second lowest auction for this item
 function Scan:GetSecondLowest(itemString, lowestBuyout, operation)
 	local auctionItem = Scan.auctionData[itemString]
