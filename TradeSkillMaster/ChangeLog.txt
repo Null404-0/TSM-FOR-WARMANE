@@ -1,3 +1,6 @@
+v2.9.1 (Warmane fork)
+*Bundle WenQuanYi Zen Hei CJK font and use it as the default content/bold font, so Traditional Chinese (zhTW) clients on Warmane no longer render Chinese as "?".
+
 v2.9.0 (Warmane fork)
 *Auctioning: post items with no AH listings instead of silently dropping them (#2).
 *Auctioning: preserve player-owned records during top-N trim so post cap is respected (#3).

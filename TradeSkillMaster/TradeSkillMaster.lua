@@ -42,8 +42,11 @@ TSM.designDefaults = {
 	},
 	edgeSize = 1.5,
 	fonts = {
-		content = "Fonts\\ARIALN.TTF",
-		bold = "Interface\\Addons\\TradeSkillMaster\\Media\\DroidSans-Bold.ttf",
+		-- WenQuanYi Zen Hei：开源 CJK 字体（GPL + font exception），覆盖简体/繁体/日文。
+		-- 原生 Fonts\ARIALN.TTF 在某些客户端（特别是 Warmane 的台湾 zhTW 设置）
+		-- 不含繁体字形，导致显示 "?"；改用 bundle 的 WQY 让所有客户端统一可读。
+		content = "Interface\\Addons\\TradeSkillMaster\\Media\\wqy-zenhei.ttc",
+		bold = "Interface\\Addons\\TradeSkillMaster\\Media\\wqy-zenhei.ttc",
 	},
 	fontSizes = {
 		normal = 15,
