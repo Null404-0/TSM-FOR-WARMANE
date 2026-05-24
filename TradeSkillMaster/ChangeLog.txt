@@ -1,3 +1,6 @@
+v2.9.2 (Warmane fork)
+*AuctionScanning: bounded soft-retry for asynchronously-delivered seller names, so legitimate owners are no longer recorded as "?" when the owner data wave hasn't arrived yet on the first read. Still avoids the expensive hard re-query for genuinely blank-name (special-char exploit) players — they cost at most ~1.5s of soft retries instead of 8s+4 hard retries (regression from #15).
+
 v2.9.1 (Warmane fork)
 *Bundle WenQuanYi Zen Hei CJK font and use it as the default content/bold font, so Traditional Chinese (zhTW) clients on Warmane no longer render Chinese as "?".
 

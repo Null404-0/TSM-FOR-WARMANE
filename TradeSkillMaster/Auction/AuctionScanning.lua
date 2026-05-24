@@ -14,6 +14,7 @@ TSMAPI.AuctionScan = {}
 local RETRY_DELAY = 2
 local MAX_RETRIES = 4
 local BASE_DELAY = 0.10 -- time to delay for before trying to scan a page again when it isn't fully loaded
+local SELLER_RETRY_DELAY = 1.5 -- max time (in BASE_DELAY steps) to soft-retry waiting for asynchronously-delivered seller names before recording "?"
 local QUERY_TIMEOUT = 5 -- seconds to wait for AUCTION_ITEM_LIST_UPDATE before re-sending the query (private servers occasionally drop the event)
 local MAX_QUERY_RETRIES = 3
 local private = { callbackHandler = nil, query = {}, options = {}, data = {}, isScanning = nil }
@@ -67,6 +68,7 @@ end
 function private:ScanAuctionPage(resolveSellers)
 	local shown = GetNumAuctionItems("list")
 	local badData = false
+	local sellersMissing = false
 	local auctions = {}
 
 	for i = 1, shown do
@@ -76,15 +78,19 @@ function private:ScanAuctionPage(resolveSellers)
 		local count, _, _, _, _, _, buyout, _, _, seller = select(3, GetAuctionItemInfo("list", i))
 		local itemString = TSMAPI:GetItemString(GetAuctionItemLink("list", i))
 		auctions[i] = { itemString = itemString, index = i, count = count, buyout = buyout, seller = seller }
-		-- seller 缺失不算 badData：Warmane 上存在使用特殊字符绕过名字校验的玩家，服务器会一直返回 nil seller，
-		-- 重试只会徒增 8s+4 次硬重试的浪费（见上层 ScanAuctions 的 MAX_RETRIES/RETRY_DELAY 路径）。
-		-- AddAuctionRecord 会把 nil seller 写成 "?"，Auctioning 看到 "?" 会自行 skip 该物品。
+		-- itemString/buyout/count 缺失才算 badData（真·页面未加载完整），走 soft→hard re-query 重试。
 		if not (itemString and buyout and count) then
 			badData = true
 		end
+		-- seller 名是异步分批下发的：首个 AUCTION_ITEM_LIST_UPDATE 时合法卖家的名字往往还没到货。
+		-- 这不算 badData（不该触发昂贵的 hard re-query），但值得做有上限的 soft retry 等它到货，
+		-- 否则 AddAuctionRecord 会把这些“还没加载完”的合法卖家记成 "?"（见 ScanAuctions 的兜底）。
+		if resolveSellers and buyout and buyout ~= 0 and not seller then
+			sellersMissing = true
+		end
 	end
 
-	return badData, auctions
+	return badData, auctions, sellersMissing
 end
 
 function IsDuplicatePage()
@@ -277,7 +283,7 @@ function private:ScanAuctions()
 		end
 	end
 
-	local dataIsBad, auctions = private:ScanAuctionPage(private.resolveSellers)
+	local dataIsBad, auctions, sellersMissing = private:ScanAuctionPage(private.resolveSellers)
 
 	-- check that we have good data
 	if dataIsBad or IsDuplicatePage() then
@@ -306,6 +312,18 @@ function private:ScanAuctions()
 		end
 	end
 
+	-- Seller names not yet delivered: do a bounded soft-retry only (never a hard re-query) so that
+	-- legitimate owners get a chance to load instead of being recorded as "?". This re-read accepts
+	-- the page the moment the async owner wave arrives (sellersMissing == false). Genuinely blank-name
+	-- players (Warmane special-char exploit; the server never returns their name) cost at most
+	-- SELLER_RETRY_DELAY of soft retries before we fall through and write "?" for them.
+	if sellersMissing and (private.query.sellerDelay or 0) < SELLER_RETRY_DELAY then
+		private.query.sellerDelay = (private.query.sellerDelay or 0) + BASE_DELAY
+		dbg("ScanAuctions: seller names not loaded, soft-retry %.2fs/%ss", private.query.sellerDelay, tostring(SELLER_RETRY_DELAY))
+		TSMAPI:CreateTimeDelay("updateDelay", BASE_DELAY, private.ScanAuctions)
+		return
+	end
+
 	if private.cache then
 		-- store info in cache
 		for i, v in ipairs(auctions) do
@@ -319,6 +337,7 @@ function private:ScanAuctions()
 	private.query.hardRetry = nil
 	private.query.retries = 0
 	private.query.timeDelay = 0
+	private.query.sellerDelay = 0
 	if private.scanType ~= "lastPage" then
 		private.query.page = private.query.page + 1 -- increment current page
 	end
