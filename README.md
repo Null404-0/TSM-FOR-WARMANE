@@ -1,4 +1,3 @@
-<<<<<<< claude/sharp-gauss-1868p
 # TSM for Warmane
 
 针对 Warmane 3.3.5 WLK 服务器适配的 TradeSkillMaster 整合版。
