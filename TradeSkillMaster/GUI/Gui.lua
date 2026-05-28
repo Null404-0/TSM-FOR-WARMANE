@@ -308,11 +308,12 @@ function TSMAPI:CreateMovableFrame(name, defaults, parent)
 	frame.RefreshPosition = function(self)
 		options.hasLoaded = true
 		self:SetScale(UIParent:GetScale()*options.scale)
-		self:SetFrameLevel(0)
 		self:ClearAllPoints()
 		self:SetPoint("BOTTOMLEFT", UIParent, options.x, options.y)
 		self:SetWidth(options.width)
 		self:SetHeight(options.height)
+		-- 显示时抬到当前 strata 顶部，避免和 AuctionFrame 等同层窗口 z-order 互相穿插。
+		self:Raise()
 	end
 	frame:SetScript("OnShow", frame.RefreshPosition)
 	frame.options = options
