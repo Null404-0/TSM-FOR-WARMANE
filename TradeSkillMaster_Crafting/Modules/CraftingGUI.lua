@@ -2088,7 +2088,13 @@ function GUI:CreatePromptFrame(parent)
 	local frame = CreateFrame("Frame", nil, parent)
 	TSMAPI.Design:SetFrameBackdropColor(frame)
 	frame:SetAllPoints()
-	frame:SetFrameLevel(20)
+	-- 父窗口在 OnShow 时会 Raise()，frame level 不固定，改成相对父级 +5 保证盖在父窗口上。
+	frame:SetScript("OnShow", function(self)
+		local p = self:GetParent()
+		if p then
+			self:SetFrameLevel(p:GetFrameLevel() + 5)
+		end
+	end)
 	frame:EnableMouse(true)
 	frame:Hide()
 
