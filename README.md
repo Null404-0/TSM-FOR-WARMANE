@@ -22,6 +22,7 @@
 **2026.05.31** — v2.9.3
 - Auctioning：纯竞价单（无一口价）不再被 trim 误当成"最低价"保留，高价值物品（如 `附魔武器 - 狂暴`）不再被按 `normalPrice` 上架
 - AuctionScanning：fastScan 早停判定要求每个目标至少有一条有效一口价记录，避免 WoW 把 `buyout==0` 排在最前导致只扫到纯竞价就停
+- Auctioning：SCAN_PAGE_UPDATE 跨页去重 + 延迟交付：每个物品一次扫描只交给 PostScan 一次，且要等看到 buyout 才交，避免雕文这种多页合并查询重复入队同一物品（同一物品在日志里出现 4-5 次 normalPrice 发布）
 - Auctioning：MergeAuctionData 修同对象自插入死循环，避免触发 WoW 脚本运行时限
 
 **2026.05.28**
