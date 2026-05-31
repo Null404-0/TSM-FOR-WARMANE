@@ -112,13 +112,17 @@ function Scan:ScanNextFilter()
 	TSMAPI.AuctionScan:RunQuery(Scan.filterList[1], CallbackHandler, true, nil, nil, true)
 end
 
+-- 用 GetItemBuyout()（buyout==0/nil 时返回 nil）+ math.huge 兜底，
+-- 把"纯竞价"（buyout==0）的拍卖排到最后，而不是原始 a.buyout 把 0 当最低。
+-- 否则像"附魔武器 - 狂暴"这种高价值物品满屏纯竞价时，trim 会保留 5 条 buyout==0
+-- 的记录，GetLowestAuction 全部跳过 → 取不到最低价 → 永远走 postingNormal。
 local function SortRecordsByBuyoutAsc(a, b)
-	local aBuyout = a.buyout or math.huge
-	local bBuyout = b.buyout or math.huge
+	local aBuyout = a:GetItemBuyout() or math.huge
+	local bBuyout = b:GetItemBuyout() or math.huge
 	if aBuyout ~= bBuyout then
 		return aBuyout < bBuyout
 	end
-	return (a.displayedBid or math.huge) < (b.displayedBid or math.huge)
+	return (a:GetItemDisplayedBid() or math.huge) < (b:GetItemDisplayedBid() or math.huge)
 end
 
 -- 按价格升序排序，保留前 N 条最低价；额外保留所有玩家自己（含小号）的拍卖，
@@ -149,9 +153,15 @@ function Scan:MergeAuctionData(itemString, newAuctionItem)
 	-- 否则 record.parent (= newAuctionItem) 的 alts 为空，小号挂单会漏判。
 	newAuctionItem:SetAlts(existing.alts)
 
-	local newRecords = newAuctionItem.records or {}
-	for _, record in ipairs(newRecords) do
-		tinsert(existing.records, record)
+	-- 在当前数据流里 pageData == private.data，所以 newAuctionItem 与 existing 是同一对象，
+	-- existing.records == newAuctionItem.records 是同一张表。直接 ipairs 边遍历边 tinsert 会
+	-- 让索引一直追到尾部 nil 不出现，陷入无限循环并最终触发 WoW 的脚本运行超限。
+	-- AddAuctionRecord 已经把后续页的记录就地 append 到这张表里了，这里只需 re-trim + re-compact。
+	if newAuctionItem ~= existing then
+		local newRecords = newAuctionItem.records or {}
+		for _, record in ipairs(newRecords) do
+			tinsert(existing.records, record)
+		end
 	end
 
 	existing.records = TrimRecordsKeepPlayer(existing.records)
