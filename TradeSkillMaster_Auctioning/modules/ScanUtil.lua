@@ -94,8 +94,9 @@ local function CallbackHandler(event, ...)
 		end
 		-- 本页若至少交付了一个物品，就触发一次去抖 UI 刷新，让日志框/拍卖框跟着滚动而不必手动点"显示日志"。
 		-- 用 CreateTimeDelay 做 0.05s 去抖，相邻页事件不会叠出多次刷新。
-		if handedOff and TSM.GUI and TSM.GUI.UpdateSTData then
-			TSMAPI:CreateTimeDelay("aucScanPageSTRefresh", 0.05, function() TSM.GUI:UpdateSTData() end)
+		-- 走 TSM.Manage 转发：UpdateSTData 挂在 GUI 模块的 private 表上，TSM.GUI（公开模块）上没有这个方法。
+		if handedOff then
+			TSMAPI:CreateTimeDelay("aucScanPageSTRefresh", 0.05, function() TSM.Manage:RefreshSTData() end)
 		end
 	elseif event == "SCAN_INTERRUPTED" then
 		TSM.Manage:ScanComplete(true)
