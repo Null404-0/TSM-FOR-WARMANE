@@ -364,19 +364,25 @@ function private:ScanAuctions()
 		private:StopScanning()
 		return DoCallback("SCAN_COMPLETE", private.data)
 	elseif private.fastScan and private.query.page >= 1 then
-		-- 【修复】fastScan 不再"扫完页 1 必停"。WoW 的 QueryAuctionItems 是模糊名字匹配
-		-- （例如 query "复生雕文" 会带回 "亡者复生雕文" "无忧复生雕文"），同名前缀物品
-		-- 可能把目标挤到后续页。必须等 query.items 里所有 itemString 都收到数据才停。
-		local allTargetsSeen = true
+		-- 【修复】fastScan 不再"扫完页 1 必停"，必须满足两个条件：
+		-- (1) WoW QueryAuctionItems 模糊匹配名字（query "复生雕文" 会带回 "亡者/无忧复生雕文"），
+		--     同名前缀物品可能把目标挤到后续页 → 等 query.items 里每个 itemString 都收到数据；
+		-- (2) WoW 按 buyout 升序排列时把 buyout==0 的纯竞价单排在最前，所以靠前几页可能塞满
+		--     纯竞价单而真正的有效一口价在后续页 → 还要求每个目标至少出现过一条 buyout>0 的记录。
+		-- 如果某个物品 AH 上真的没有一口价（全部为纯竞价或根本无人挂），hasBuyoutRecord
+		-- 永远不会被置 true，扫描会一直翻页直到 totalPages 自然结束，由后续 PostScan 走
+		-- postingNormal 分支兜底（属于正确行为：没有一口价对手就按 normalPrice 上架）。
+		local allTargetsReady = true
 		if private.query.items then
 			for _, itemString in ipairs(private.query.items) do
-				if not private.data[itemString] then
-					allTargetsSeen = false
+				local item = private.data[itemString]
+				if not item or not item.hasBuyoutRecord then
+					allTargetsReady = false
 					break
 				end
 			end
 		end
-		if allTargetsSeen then
+		if allTargetsReady then
 			private:StopScanning()
 			return DoCallback("SCAN_COMPLETE", private.data)
 		end
@@ -404,6 +410,13 @@ function private:AddAuctionRecord(index)
 		private.data[itemString]:SetTexture(texture)
 	end
 	private.data[itemString]:AddAuctionRecord(count, minBid, minIncrement, buyout, bid, highBidder, seller or "?", timeLeft)
+	-- Flag set as soon as we see any record with a real (>0) buyout. fastScan uses this to
+	-- avoid stopping while the item only has bid-only (buyout==0) records loaded — WoW sorts
+	-- buyout=0 ahead of real buyouts when sorting "list" by buyout asc, so page 0 can be
+	-- packed with pure-bid auctions while the real buyouts sit on later pages.
+	if buyout and buyout > 0 then
+		private.data[itemString].hasBuyoutRecord = true
+	end
 
 	-- add the base item if necessary
 	local baseItemString = TSMAPI:GetBaseItemString(itemString)
@@ -416,6 +429,9 @@ function private:AddAuctionRecord(index)
 		end
 		private.data[baseItemString]:AddAuctionRecord(count, minBid, minIncrement, buyout, bid, highBidder, seller or "?", timeLeft)
 		private.data[baseItemString].isBaseItem = true
+		if buyout and buyout > 0 then
+			private.data[baseItemString].hasBuyoutRecord = true
+		end
 	end
 
 	if select(8, TSMAPI:GetSafeItemInfo(link)) == count then
