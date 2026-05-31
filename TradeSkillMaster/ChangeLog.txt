@@ -1,3 +1,9 @@
+v2.9.3 (Warmane fork)
+*Auctioning: rank bid-only (buyout==0) records last in the top-N trim sort instead of treating them as the cheapest. Previously `record.buyout` was used directly and `0 or math.huge` kept returning 0 (0 is truthy in Lua), so high-value items where most sellers post bid-only (e.g. Enchant Weapon - Berserking scrolls) ended up with all 5 trimmed records being bid-only; GetLowestAuction then skipped them all and PostScan fell through to postingNormal, posting at the configured normalPrice every time.
+*AuctionScanning: fastScan now waits until each query target has at least one record with a real (>0) buyout before stopping, not just any record. WoW sorts bid-only auctions ahead of real buyouts when sorting "list" by buyout asc, so the leading pages can be packed with pure-bid listings while real buyouts sit on later pages; the previous "item seen" check would stop too early in that scenario and produce the same postingNormal symptom as the trim bug above.
+*Auctioning: MergeAuctionData no longer self-loops when newAuctionItem and existing are the same object (which is the always-true case in the current pageData == private.data flow). The old `for record in ipairs(records) tinsert(records, record)` walked an array it was appending to, with no terminating nil, and would eventually trip WoW's script-runtime limit.
+*GUI: raise movable frames on show so the AH window and Crafting window stop z-fighting when both are open (#21).
+
 v2.9.2 (Warmane fork)
 *AuctionScanning: bounded soft-retry for asynchronously-delivered seller names, so legitimate owners are no longer recorded as "?" when the owner data wave hasn't arrived yet on the first read. Still avoids the expensive hard re-query for genuinely blank-name (special-char exploit) players — they cost at most ~1.5s of soft retries instead of 8s+4 hard retries (regression from #15).
 
