@@ -83,6 +83,15 @@ function Manage:ProcessScannedItem(itemString, noUpdate)
 	end
 end
 
+-- 给 ScanUtil 用的合并刷新入口：UpdateSTData 是定义在 GUI 模块的 private 表上的，
+-- 而 private 才是 StartScan 时传进来的 GUIRef，不能直接走 TSM.GUI:UpdateSTData()（公开模块上没这个方法）。
+-- 这里转发给本地保存的 GUI 引用即可。
+function Manage:RefreshSTData()
+	if GUI and GUI.UpdateSTData then
+		GUI:UpdateSTData()
+	end
+end
+
 function Manage:ScanComplete(interrupted)
 	if interrupted then
 		Util:Stop(true)
