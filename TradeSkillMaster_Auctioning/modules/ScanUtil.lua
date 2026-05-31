@@ -12,6 +12,10 @@ local L = LibStub("AceLocale-3.0"):GetLocale("TradeSkillMaster_Auctioning") -- l
 
 Scan.auctionData = {}
 Scan.skipped = {}
+-- 记录"已交付给 PostScan 的物品"，每次扫描清空。
+-- 用来防止 SCAN_PAGE_UPDATE 跨页重复调用 ProcessScannedItem 让 Post:ProcessItem 反复入队，
+-- 导致同一物品被排 N 次 normalPrice 的发布任务（一页一次）。
+Scan.postProcessed = {}
 
 -- 【优化配置】只扫描前N条拍卖即可判断压价
 local EARLY_STOP_LIMIT = 5  -- 可调整为 2-10
@@ -21,6 +25,20 @@ local function dbg(fmt, ...)
 	if not _G.TSM_AUCTION_DEBUG then return end
 	local msg = (select("#", ...) > 0) and string.format(fmt, ...) or fmt
 	DEFAULT_CHAT_FRAME:AddMessage("|cff88ccff[TSM-DBG/Auct]|r " .. tostring(msg))
+end
+
+-- 把物品交给 PostScan：每个 itemString 一次扫描里只交付一次。
+-- finalPass=true 表示 SCAN_COMPLETE 的兜底交付，此时即便没有 buyout 数据也要交（让 PostScan
+-- 走 postingNormal 路径上架"无对手"的物品）。其他时机要求至少看到过一条 buyout>0 的记录才交，
+-- 避免 page 0 全是纯竞价时 PostScan 拿到 nil 最低价错按 normalPrice 上架。
+local function HandOffToPostScan(itemString, noUpdate, finalPass)
+	if Scan.postProcessed[itemString] then return end
+	if not finalPass then
+		local item = Scan.auctionData[itemString]
+		if not item or not item.hasBuyoutRecord then return end
+	end
+	Scan.postProcessed[itemString] = true
+	TSM.Manage:ProcessScannedItem(itemString, noUpdate)
 end
 
 local function CallbackHandler(event, ...)
@@ -38,20 +56,20 @@ local function CallbackHandler(event, ...)
 		local current, total, skipped = ...
 		TSM.Manage:UpdateStatus("query", current, total)
 		for _, itemString in ipairs(skipped) do
-			TSM.Manage:ProcessScannedItem(itemString)
+			-- 跳过的物品没有 auction 数据，按 SCAN_COMPLETE 兜底口径交付（finalPass=true）。
+			HandOffToPostScan(itemString, nil, true)
 			tinsert(Scan.skipped, itemString)
 		end
 	elseif event == "SCAN_PAGE_UPDATE" then
 		-- 【核心优化1】每扫完一页立即处理，不等全部完成
 		local page, totalPages, pageData = ...
 		TSM.Manage:UpdateStatus("page", page, totalPages)
-		
+
 		if pageData and Scan.filterList and Scan.filterList[1] then
 			for _, itemString in ipairs(Scan.filterList[1].items) do
 				if pageData[itemString] and not Scan.auctionData[itemString] then
 					-- 新物品：立即处理和显示
 					Scan:ProcessItem(itemString, pageData[itemString])
-					TSM.Manage:ProcessScannedItem(itemString)
 				elseif pageData[itemString] and Scan.auctionData[itemString] then
 					-- 【优化2】已有数据的物品：检查是否已经收集够5条最低价
 					local existingRecords = Scan.auctionData[itemString].records or {}
@@ -61,9 +79,11 @@ local function CallbackHandler(event, ...)
 					else
 						-- 合并新数据（但仍然只保留前5条）
 						Scan:MergeAuctionData(itemString, pageData[itemString])
-						TSM.Manage:ProcessScannedItem(itemString, true)  -- noUpdate=true，避免频繁刷新
 					end
 				end
+				-- 交付要满足两条：之前没交过、且物品已经看到过 buyout>0 记录。
+				-- 没看到 buyout 就不交，等后续页或 SCAN_COMPLETE 兜底，避免重复入队 + 按 normalPrice 错挂。
+				HandOffToPostScan(itemString, true)
 			end
 		end
 	elseif event == "SCAN_INTERRUPTED" then
@@ -80,12 +100,11 @@ local function CallbackHandler(event, ...)
 		--   2) 合并查询里的同名多 itemID 物品（例如 暗月卡片：伟大 力/敏/智 三个变体），
 		--      只要某个变体当前无人挂，data 里就缺它，扫描结果随机丢失物品。
 		for _, itemString in ipairs(Scan.filterList[1].items) do
-			if not Scan.auctionData[itemString] then
-				if data[itemString] then
-					Scan:ProcessItem(itemString, data[itemString])
-				end
-				TSM.Manage:ProcessScannedItem(itemString)
+			if not Scan.auctionData[itemString] and data[itemString] then
+				Scan:ProcessItem(itemString, data[itemString])
 			end
+			-- finalPass=true：扫描已结束，对没有 buyout 的物品也按 normalPrice 交付。
+			HandOffToPostScan(itemString, nil, true)
 		end
 		tremove(Scan.filterList, 1)
 		Scan:ScanNextFilter()
@@ -95,6 +114,7 @@ end
 function Scan:StartItemScan(itemList)
 	wipe(Scan.auctionData)
 	wipe(Scan.skipped)
+	wipe(Scan.postProcessed)
 	TSMAPI:GenerateQueries(itemList, CallbackHandler)
 	TSM.Manage:UpdateStatus("query", 0, -1)
 end
