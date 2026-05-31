@@ -31,14 +31,16 @@ end
 -- finalPass=true 表示 SCAN_COMPLETE 的兜底交付，此时即便没有 buyout 数据也要交（让 PostScan
 -- 走 postingNormal 路径上架"无对手"的物品）。其他时机要求至少看到过一条 buyout>0 的记录才交，
 -- 避免 page 0 全是纯竞价时 PostScan 拿到 nil 最低价错按 normalPrice 上架。
+-- 返回值：true 表示这次确实把物品交给了 PostScan（调用方据此决定要不要触发 UI 刷新）。
 local function HandOffToPostScan(itemString, noUpdate, finalPass)
-	if Scan.postProcessed[itemString] then return end
+	if Scan.postProcessed[itemString] then return false end
 	if not finalPass then
 		local item = Scan.auctionData[itemString]
-		if not item or not item.hasBuyoutRecord then return end
+		if not item or not item.hasBuyoutRecord then return false end
 	end
 	Scan.postProcessed[itemString] = true
 	TSM.Manage:ProcessScannedItem(itemString, noUpdate)
+	return true
 end
 
 local function CallbackHandler(event, ...)
@@ -65,6 +67,7 @@ local function CallbackHandler(event, ...)
 		local page, totalPages, pageData = ...
 		TSM.Manage:UpdateStatus("page", page, totalPages)
 
+		local handedOff = false
 		if pageData and Scan.filterList and Scan.filterList[1] then
 			for _, itemString in ipairs(Scan.filterList[1].items) do
 				if pageData[itemString] and not Scan.auctionData[itemString] then
@@ -83,8 +86,16 @@ local function CallbackHandler(event, ...)
 				end
 				-- 交付要满足两条：之前没交过、且物品已经看到过 buyout>0 记录。
 				-- 没看到 buyout 就不交，等后续页或 SCAN_COMPLETE 兜底，避免重复入队 + 按 normalPrice 错挂。
-				HandOffToPostScan(itemString, true)
+				-- 这里用 noUpdate=true 跳过每条之后的 UI 刷新，下面做一次合并的去抖刷新。
+				if HandOffToPostScan(itemString, true) then
+					handedOff = true
+				end
 			end
+		end
+		-- 本页若至少交付了一个物品，就触发一次去抖 UI 刷新，让日志框/拍卖框跟着滚动而不必手动点"显示日志"。
+		-- 用 CreateTimeDelay 做 0.05s 去抖，相邻页事件不会叠出多次刷新。
+		if handedOff and TSM.GUI and TSM.GUI.UpdateSTData then
+			TSMAPI:CreateTimeDelay("aucScanPageSTRefresh", 0.05, function() TSM.GUI:UpdateSTData() end)
 		end
 	elseif event == "SCAN_INTERRUPTED" then
 		TSM.Manage:ScanComplete(true)
