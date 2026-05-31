@@ -3,7 +3,7 @@
 针对 Warmane 3.3.5 WLK 服务器适配的 TradeSkillMaster 整合版。
 完整汉化（含繁中）。
 
-当前版本：**v2.9.2**
+当前版本：**v2.9.3**
 
 ---
 
@@ -18,6 +18,11 @@
 ---
 
 ## 更新日志
+
+**2026.05.31** — v2.9.3
+- Auctioning：纯竞价单（无一口价）不再被 trim 误当成"最低价"保留，高价值物品（如 `附魔武器 - 狂暴`）不再被按 `normalPrice` 上架
+- AuctionScanning：fastScan 早停判定要求每个目标至少有一条有效一口价记录，避免 WoW 把 `buyout==0` 排在最前导致只扫到纯竞价就停
+- Auctioning：MergeAuctionData 修同对象自插入死循环，避免触发 WoW 脚本运行时限
 
 **2026.05.28**
 - 修复多个 TSM 窗口同时打开时叠加显示错乱（AH + 附魔 z-order 穿插）
