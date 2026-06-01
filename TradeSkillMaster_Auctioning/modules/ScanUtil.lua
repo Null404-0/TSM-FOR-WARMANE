@@ -123,9 +123,14 @@ local function CallbackHandler(event, ...)
 	end
 end
 
-function Scan:StartItemScan(itemList)
-	wipe(Scan.auctionData)
-	wipe(Scan.skipped)
+-- keepData=true 用于"补扫"：保留上一轮已经拿到的 auctionData（那些目标已处理过/已入队），
+-- 只重置 postProcessed 让本轮 itemList 里的目标能再次交给 ProcessItem。本轮 filter 只含补扫目标，
+-- 所以清空 postProcessed 不会让上一轮已交付的物品被重复处理。
+function Scan:StartItemScan(itemList, keepData)
+	if not keepData then
+		wipe(Scan.auctionData)
+		wipe(Scan.skipped)
+	end
 	wipe(Scan.postProcessed)
 	TSMAPI:GenerateQueries(itemList, CallbackHandler)
 	TSM.Manage:UpdateStatus("query", 0, -1)

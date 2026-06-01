@@ -52,6 +52,7 @@ local info = {
 		invalidSeller = {L["Invalid seller data returned by server."], RED},
 		atWhitelist = {L["Posted at whitelisted player's price."], GREEN},
 		keepPosted = {L["Keeping undercut auctions posted."], CYAN},
+		noData = {L["No auction data found - run the scan again to retry."], ORANGE},
 	},
 }
 
