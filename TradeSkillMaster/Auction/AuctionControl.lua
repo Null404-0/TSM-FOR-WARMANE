@@ -16,6 +16,10 @@ LibStub("AceEvent-3.0"):Embed(private)
 private.matchList = {}
 private.currentPage = {}
 
+-- 一口价失败(索引过期/被人买走)时,自动重新查询并重试同一单这么多次后才放弃。
+-- 复刻玩家手动"再搜一次就能买"的操作,把卡死和"未找到指定物品"基本消除。
+local MAX_BUY_RETRIES = 3
+
 
 local function GetNumInBags(baseItemString)
 	local num = 0
@@ -51,15 +55,16 @@ diffFrame:RegisterEvent("UI_ERROR_MESSAGE")
 diffFrame:SetScript("OnEvent", function(self, event, arg)
 	if event == "UI_ERROR_MESSAGE" then
 		if arg == ERR_ITEM_NOT_FOUND then
-			local auctionExists
-			for i=1, GetNumAuctionItems("list") do
-				if ValidateAuction(i, "list") then
-					auctionExists = true
-					break
-				end
-			end
-			if not auctionExists then
+			-- 我们的 PlaceAuctionBid 失败了:目标拍卖的索引过期了(在扫描和点击之间
+			-- 它换了页或被别人买走)。撤销这次挂起操作的计数,然后用一次全新查询去
+			-- 重新定位并重试买这同一单 —— 这正是玩家手动"再搜一次就能买"的恢复动作。
+			local wasPending = private.justBought
+			private.justBought = nil
+			if self.num > 0 then
 				self.num = self.num - 1
+			end
+			if wasPending then
+				private:OnBuyoutFailed()
 			end
 		elseif arg == ERR_AUCTION_HIGHER_BID then
 			local auctionExists
@@ -134,6 +139,7 @@ function private:FindCurrentAuctionForBuyout(noCache, resetCount)
 	
 	if count > 3 then
 		-- auction no longer exists
+		private.buyRetries = 0
 		TSM:Print(L["Skipping auction which no longer exists."])
 		diffFrame.num = diffFrame.num - 1
 		private.justBought = true
@@ -142,6 +148,35 @@ function private:FindCurrentAuctionForBuyout(noCache, resetCount)
 	end
 	TSMAPI.AuctionScan:FindAuction(private.OnAuctionFound, {itemString=private.currentAuction.itemString, buyout=private.currentAuction.buyout, count=private.currentAuction.count, seller=private.currentAuction.seller}, not noCache)
 	private.isSearching = true
+end
+
+-- 一口价失败后调用:用一次全新查询自动重新定位目标,把确认框恢复成"可购买"状态,
+-- 这样用户只要再点一下就买到了(索引/页位已刷新),不必关掉重新搜索整张 AH。
+-- 出价本身仍由用户点击触发 —— 3.3.5a 的 PlaceAuctionBid 需要真实点击事件,
+-- 不能从错误回调里以编程方式重发,否则会静默失败/卡死。
+function private:OnBuyoutFailed()
+	if private.confirmationMode ~= "Buyout" then return end
+	if not private.currentAuction then return end
+	if not (private.confirmationFrame and private.confirmationFrame:IsVisible()) then return end
+
+	private.buyRetries = (private.buyRetries or 0) + 1
+	if private.buyRetries > MAX_BUY_RETRIES then
+		-- 连续失败到上限:这一单基本已被买走/不存在,放弃并让正常流程推进/关闭确认框。
+		-- 这里不再减 num —— diffFrame 在调用本函数前已经减过一次了。
+		private.buyRetries = 0
+		TSM:Print(L["Skipping auction which no longer exists."])
+		private.justBought = true
+		private:AUCTION_ITEM_LIST_UPDATE()
+		return
+	end
+
+	-- 丢弃可能已过期的当前页数据,逼着 FindCurrentAuctionForBuyout 走 FindAuction
+	-- 做一次全新查询(刷新客户端那份过期的拍卖列表),而不是拿旧索引重新匹配。
+	private.matchList = {}
+	private.currentPage = {}
+	private.confirmationFrame.proceed:Disable()
+	private.confirmationFrame.searchingText:SetText(L["Searching for item..."])
+	private:FindCurrentAuctionForBuyout(true, true)
 end
 
 function private:DoBuyout()
@@ -259,6 +294,7 @@ function private:AUCTION_ITEM_LIST_UPDATE()
 	
 	if private.justBought then
 		private.justBought = nil
+		private.buyRetries = 0 -- 这一单已干净结算(或被明确跳过),重置重试计数
 		private.currentAuction.num = private.currentAuction.num + 1
 		local prevAuction = CopyTable(private.currentAuction)
 		if private.currentAuction.num > private.currentAuction.numAuctions then
@@ -350,6 +386,7 @@ function private:ShowConfirmationWindow()
 	
 	private:RegisterEvent("AUCTION_ITEM_LIST_UPDATE")
 	diffFrame.num = 0
+	private.buyRetries = 0
 	diffFrame:Show()
 	private.confirmationFrame:Show()
 	private.confirmationFrame.proceed:Disable()
@@ -389,6 +426,7 @@ end
 
 function TSMAPI.AuctionControl:HideConfirmation()
 	private:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+	private.buyRetries = 0
 	if private.confirmationFrame then private.confirmationFrame:Hide() end
 	if private.postFrame then private.postFrame:Hide() end
 	diffFrame:Hide()

@@ -308,6 +308,12 @@ local function ScanCallback(event, ...)
 					return (record:GetItemBuyout() or 0) > auctionItem.query.maxPrice
 				end)
 		end
+		if (auctionItem.query.minStack or 0) > 0 then
+			-- "/gNN": drop anything smaller than the requested stack size
+			auctionItem:FilterRecords(function(record)
+					return (record.count or 0) < auctionItem.query.minStack
+				end)
+		end
 		if TSM.isCrafting then
 			local func = TSMAPI:ParseCustomPrice("matprice")
 			local price = func and func(itemString) or nil
@@ -395,6 +401,14 @@ local function GetMaxQuantity(str)
 	end
 end
 
+-- "/gNN" -> only keep auctions whose stack size is >= NN (e.g. "/g20" for stacks of 20+).
+-- Used to skip the sea of single items and grab big stacks quickly.
+local function GetMinStack(str)
+	if #str > 1 and strsub(str, 1, 1) == "g" then
+		return tonumber(strsub(str, 2))
+	end
+end
+
 local function GetItemLevel(str)
 	if #str > 1 and strsub(str, 1, 1) == "i" then
 		return tonumber(strsub(str, 2))
@@ -430,8 +444,8 @@ end
 
 local function GetSearchFilterOptions(searchTerm)
 	local parts = {("/"):split(searchTerm)}
-	local queryString, class, subClass, minLevel, maxLevel, minILevel, maxILevel, rarity, usableOnly, exactOnly, evenOnly, maxQuantity, maxPrice
-	
+	local queryString, class, subClass, minLevel, maxLevel, minILevel, maxILevel, rarity, usableOnly, exactOnly, evenOnly, maxQuantity, maxPrice, minStack
+
 	if #parts == 1 then
 		return true, parts[1]
 	elseif #parts == 0 then
@@ -452,6 +466,12 @@ local function GetSearchFilterOptions(searchTerm)
 		elseif GetMaxQuantity(str) then
 			if not maxQuantity then
 				maxQuantity = GetMaxQuantity(str)
+			else
+				return false, L["Invalid Max Quantity"]
+			end
+		elseif GetMinStack(str) then
+			if not minStack then
+				minStack = GetMinStack(str)
 			else
 				return false, L["Invalid Max Quantity"]
 			end
@@ -524,7 +544,7 @@ local function GetSearchFilterOptions(searchTerm)
 		minILevel = oldMaxILevel
 	end
 	
-	return true, queryString or "", class or 0, subClass or 0, minLevel or 0, maxLevel or 0, minILevel or 0, maxILevel or 0, rarity or -1, usableOnly or 0, exactOnly or nil, evenOnly or nil, maxQuantity or 0, maxPrice
+	return true, queryString or "", class or 0, subClass or 0, minLevel or 0, maxLevel or 0, minILevel or 0, maxILevel or 0, rarity or -1, usableOnly or 0, exactOnly or nil, evenOnly or nil, maxQuantity or 0, maxPrice, minStack or 0
 	--return true, queryString or "", class or 0, subClass or 0, minLevel or 0, maxLevel or 0, minILevel or 0, maxILevel or 0, rarity or 0, usableOnly or 0, exactOnly or nil, evenOnly or nil, maxQuantity or 0, maxPrice
 end
 
@@ -553,7 +573,7 @@ function Search:GetFilters(searchQuery)
 				end
 			end
 		else
-			local isValid, queryString, class, subClass, minLevel, maxLevel, minILevel, maxILevel, rarity, usableOnly, exactOnly, evenOnly, maxQuantity, maxPrice = GetSearchFilterOptions(searchTerm)
+			local isValid, queryString, class, subClass, minLevel, maxLevel, minILevel, maxILevel, rarity, usableOnly, exactOnly, evenOnly, maxQuantity, maxPrice, minStack = GetSearchFilterOptions(searchTerm)
 					
 			if not isValid then
 				TSM:Print(L["Skipped the following search term because it's invalid."])
@@ -576,7 +596,7 @@ function Search:GetFilters(searchQuery)
 				else
 					filters.currentSearchTerm = searchTerm
 				end
-				tinsert(filters, {name=queryString, usable=usableOnly, minLevel=minLevel, maxLevel=maxLevel, quality=rarity, class=class, subClass=subClass, minILevel=minILevel, maxILevel=maxILevel, exactOnly=exactOnly, evenOnly=evenOnly, maxQuantity=maxQuantity, maxPrice=maxPrice})
+				tinsert(filters, {name=queryString, usable=usableOnly, minLevel=minLevel, maxLevel=maxLevel, quality=rarity, class=class, subClass=subClass, minILevel=minILevel, maxILevel=maxILevel, exactOnly=exactOnly, evenOnly=evenOnly, maxQuantity=maxQuantity, maxPrice=maxPrice, minStack=minStack})
 			end
 		end
 	end
