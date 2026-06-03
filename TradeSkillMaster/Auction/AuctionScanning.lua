@@ -156,9 +156,17 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 		return 0 -- the query will start as soon as it can but did not start immediately (return code 0)
 	end
 
-	-- sort by buyout
+	-- sort by buyout.
+	-- 3.3.5a 只能按"总价"(buyout 列)排序,没有按单价/堆叠的服务器端排序。
+	-- 平时升序(便宜的单个在前),于是大堆叠(总价高)被甩到最后几页 —— 这正是
+	-- "20一组的都在后面,要等扫完才看得到"的根因。当本次查询带了最小堆叠过滤
+	-- (/g20)时,改成降序:总价高的大堆叠落到最前面的页,几乎一开扫就能在增量
+	-- 结果里看到,无需等整轮扫描结束。结果表本身仍按单价(%市场价)排序,所以
+	-- 看到的依然是"当前最便宜的合格堆叠"在最上面。
+	local reverseScan = (query.minStack or 0) > 0
 	SortAuctionItems("list", "buyout")
-	if IsAuctionSortReversed("list", "buyout") then
+	if reverseScan ~= IsAuctionSortReversed("list", "buyout") then
+		-- 再点一次切换升/降,使排序方向 == 我们想要的方向
 		SortAuctionItems("list", "buyout")
 	end
 
@@ -176,7 +184,10 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 	private.callbackHandler = callbackHandler
 	private.resolveSellers = resolveSellers
 	private.scanType = "query"
-	private.maxPrice = maxPrice or math.huge
+	-- 降序(最小堆叠模式)下,便宜的合格堆叠散落在贵的后面,若让 per-unit maxPrice
+	-- 早停会在第一页就停掉、错过后面更便宜的堆叠。所以此模式下不让价格上限早停扫描;
+	-- 价格上限仍由 Shopping 的 callback("process") 作为记录级过滤保留。
+	private.maxPrice = reverseScan and math.huge or (maxPrice or math.huge)
 	private.fastScan = fastScan or false  -- 【新增】快速扫描标志
 
 	--starts scanning
