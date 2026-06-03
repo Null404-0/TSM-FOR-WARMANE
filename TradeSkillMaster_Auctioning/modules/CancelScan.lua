@@ -15,6 +15,13 @@ local totalToCancel, totalCanceled, count = 0, 0, 0
 local isScanning, GUI, isCancelAll, specialOptions
 local itemsCancelled, itemsMissed = {}, {}
 
+-- Warmane 的拍卖行查询偶尔会少返回一页（丢 AUCTION_ITEM_LIST_UPDATE / total 短报），
+-- 导致玩家确实挂着的某个物品在 Scan.auctionData 里完全没有数据 → ShouldCancel 直接 return
+-- （既不取消也不记日志），该物品就这么从取消列表里"消失"了，用户得反复重开扫描才能碰运气读到。
+-- 这里记下本次扫描的目标物品和已重扫次数，扫描结束时对"一条数据都没拿到"的目标自动补扫。
+local scanTargets, rescanAttempts, didScanAH = {}, 0, nil
+local MAX_RESCAN_ATTEMPTS = 2
+
 
 function Cancel:ValidateOperation(itemString, operation)
 	local _, itemLink = TSMAPI:GetSafeItemInfo(itemString)
@@ -74,7 +81,10 @@ function Cancel:GetScanListAndSetup(GUIRef, options)
 	wipe(itemsMissed)
 	wipe(TSM.operationLookup)
 	totalToCancel, totalCanceled, count = 0, 0, 0
-	
+	wipe(scanTargets)
+	rescanAttempts = 0
+	didScanAH = not options.noScan
+
 	local tempList, scanList, groupTemp = {}, {}, {}
 	
 	specialOptions = specialOptions or {}
@@ -161,8 +171,43 @@ function Cancel:GetScanListAndSetup(GUIRef, options)
 		end
 		TSMAPI:FireEvent("AUCTIONING:CANCEL:START", {num=#scanList})
 	end
-	
+
+	-- remember the validated targets so we can auto-rescan any that come back with no AH data
+	for _, itemString in ipairs(scanList) do
+		tinsert(scanTargets, itemString)
+	end
+
 	return scanList
+end
+
+-- Called by Manage:ScanComplete before finalizing. Returns the subset of this scan's targets that
+-- the AH scan returned NO data for (auctionData == nil). For an item the player actually has posted
+-- that means a dropped/short page on the server, not "no competition" — the player's own auction
+-- would otherwise have been recorded — so it's worth a bounded re-scan rather than silently skipping
+-- it. Returns nil when there's nothing to retry, or when retries are exhausted (in which case the
+-- still-missing items are logged so they're at least visible instead of vanishing from the list).
+function Cancel:GetRescanList()
+	-- CancelAll / filter / duration / price modes don't consult scan data, so "missing" is meaningless.
+	if not didScanAH then return end
+
+	local missing
+	for _, itemString in ipairs(scanTargets) do
+		if not TSM.Scan.auctionData[itemString] then
+			missing = missing or {}
+			tinsert(missing, itemString)
+		end
+	end
+	if not missing then return end
+
+	if rescanAttempts >= MAX_RESCAN_ATTEMPTS then
+		for _, itemString in ipairs(missing) do
+			TSM.Log:AddLogRecord(itemString, "cancel", "Skip", "noData")
+		end
+		return
+	end
+
+	rescanAttempts = rescanAttempts + 1
+	return missing
 end
 
 function Cancel:ProcessItem(itemString, noLog)

@@ -95,14 +95,27 @@ end
 function Manage:ScanComplete(interrupted)
 	if interrupted then
 		Util:Stop(true)
-	else
-		local numToManage = Util:DoneScanning()
-		TSMAPI:FireEvent("AUCTIONING:SCANDONE", {num=numToManage})
-		if numToManage == 0 then
-			Util:Stop()
-		elseif TSM.db.global.scanCompleteSound ~= 1 then
-			PlaySound(TSM.Options:GetScanCompleteSound(TSM.db.global.scanCompleteSound), "Master")
+		return
+	end
+
+	-- Some Warmane AH queries come back a page short, leaving an item the player actually has posted
+	-- with no scan data. Let the active scan module request a bounded re-scan of just those items before
+	-- we finalize, so undercut auctions aren't silently dropped (which forced users to re-run the scan).
+	if Util.GetRescanList then
+		local rescanList = Util:GetRescanList()
+		if rescanList and #rescanList > 0 then
+			GUI.infoText:SetInfo(L["Running Scan..."])
+			TSM.Scan:StartItemScan(rescanList, true)
+			return
 		end
+	end
+
+	local numToManage = Util:DoneScanning()
+	TSMAPI:FireEvent("AUCTIONING:SCANDONE", {num=numToManage})
+	if numToManage == 0 then
+		Util:Stop()
+	elseif TSM.db.global.scanCompleteSound ~= 1 then
+		PlaySound(TSM.Options:GetScanCompleteSound(TSM.db.global.scanCompleteSound), "Master")
 	end
 end
 

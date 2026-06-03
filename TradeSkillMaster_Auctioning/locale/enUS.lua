@@ -166,6 +166,7 @@ L["Move Non Group Items to Bank"] = true
 L["Move Post Cap To Bags"] = true
 L["Must wait for scan to finish before starting to reset."] = true
 L["New Operation"] = true
+L["No auction data found - run the scan again to retry."] = true
 L["No Items to Reset"] = true
 L["No posting."] = true
 L["None"] = true
