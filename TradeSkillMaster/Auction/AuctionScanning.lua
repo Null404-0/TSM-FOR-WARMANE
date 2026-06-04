@@ -17,6 +17,7 @@ local BASE_DELAY = 0.10 -- time to delay for before trying to scan a page again 
 local SELLER_RETRY_DELAY = 1.5 -- max time (in BASE_DELAY steps) to soft-retry waiting for asynchronously-delivered seller names before recording "?"
 local QUERY_TIMEOUT = 5 -- seconds to wait for AUCTION_ITEM_LIST_UPDATE before re-sending the query (private servers occasionally drop the event)
 local MAX_QUERY_RETRIES = 3
+local EMPTY_RETRY_LIMIT = 5 -- bounded soft-retries when a query scan's first page comes back empty while the query is still in-flight (cold-start / sort-echo race) before accepting it as a genuine 0-results query
 local private = { callbackHandler = nil, query = {}, options = {}, data = {}, isScanning = nil }
 TSMAPI:RegisterForTracing(private, "TradeSkillMaster.AuctionScanning_private")
 local scanCache = {}
@@ -307,6 +308,27 @@ function private:ScanAuctions()
 		if private.query.page ~= lastPage then
 			private.query.page = lastPage
 			return private:SendQuery()
+		end
+	end
+
+	-- 冷启动 / 排序回声竞态防护(每次扫描“第一个物品”偶发以普通价发布的根因):
+	-- 一次压价扫描刚开始时,AH 的浏览("list")结果往往是空的(玩家刚打开 AH、或刚停在别的标签),
+	-- 而我们在 RunQuery 里设排序(SortAuctionClearSort / SortAuctionItems)会触发一次 AUCTION_ITEM_LIST_UPDATE
+	-- 回声;它可能赶在服务器把本次查询的真正结果发回来之前先到 —— 此刻 GetNumAuctionItems("list") 还是 0。
+	-- 旧逻辑会把 total==0 直接当成“这次查询 0 结果 → 0 页 → 扫描完成”,于是本轮**最先处理**的那个 filter
+	-- (例如 主人的召唤雕文)被误判成“AH 上根本没人挂” → 走 postingNormal:既不压价、也读不到自己已有的
+	-- 挂单,直接按普通价挂上去。这正是“第一个物品故障频率最高、但有时又正常”的成因(回声与真结果谁先到,
+	-- 是竞态;后续 filter 时浏览列表已被上一轮结果填满,所以基本不受影响)。
+	-- 修复:查询型扫描的第 0 页若 total==0 且本次查询其实还没回结果(CanSendAuctionQuery 仍为 false 说明在途),
+	-- 就有界软重试,给真正的结果一点到货时间;一旦 CanSendAuctionQuery 为真,说明服务器确实回了 0 结果
+	-- (真·无人挂),立即收尾,不拖慢 genuine-empty。CanSendAuctionQuery 万一在某核心上不灵,也有
+	-- EMPTY_RETRY_LIMIT 次数兜底,最坏只多等几个 BASE_DELAY 后按原逻辑收尾(即退回到改动前的行为,无回归)。
+	if private.scanType == "query" and total == 0 and private.query.page == 0 and not CanSendAuctionQuery() then
+		private.query.emptyRetries = (private.query.emptyRetries or 0) + 1
+		if private.query.emptyRetries <= EMPTY_RETRY_LIMIT then
+			dbg("ScanAuctions: empty list while query in-flight, soft-retry %d/%d (cold-start/sort-echo guard)", private.query.emptyRetries, EMPTY_RETRY_LIMIT)
+			TSMAPI:CreateTimeDelay("updateDelay", BASE_DELAY, private.ScanAuctions)
+			return
 		end
 	end
 
