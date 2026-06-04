@@ -165,11 +165,23 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 	-- (/g20)时,改成降序:总价高的大堆叠落到最前面的页,几乎一开扫就能在增量
 	-- 结果里看到,无需等整轮扫描结束。结果表本身仍按单价(%市场价)排序,所以
 	-- 看到的依然是"当前最便宜的合格堆叠"在最上面。
+	--
+	-- 【关键】排序方向必须是确定性的,绝不能依赖 IsAuctionSortReversed():
+	-- Warmane 3.3.5a 上 SortAuctionItems 之后紧接着读 IsAuctionSortReversed 经常拿到"翻转前"的
+	-- 旧值,于是"再点一次纠正方向"的逻辑反而把升序又翻回降序。一旦拍卖(Auctioning)扫描以降序
+	-- 发出查询,fastScan 只读前几页就只拿到最贵的几条(例如 附魔武器-狂暴 888g+、雕文里的高价单),
+	-- 真正的最低价(677g)在后面的页根本没被扫到 → GetLowestAuction 取到偏高价 → 错走
+	-- aboveMaxNormal/postingNormal:按普通价直接挂、还读不到自己已有的挂单。这正是 /gNN 反向
+	-- 扫描上线后"狂暴/雕文又以正常价发布"反复出现的根因(降序与否取决于上一次扫描遗留的排序状态,
+	-- 所以是偶发的)。
+	-- 改法:先 SortAuctionClearSort 让 buyout 不再是当前主排序列,这样紧接着点一次 SortAuctionItems
+	-- 必然是升序(把某列提为主排序时默认 reversed=false,与翻转标志无关,是确定性的);只有
+	-- reverseScan 时再点一次切到降序。全程不读 IsAuctionSortReversed,无论它准不准都不影响结果。
 	local reverseScan = (query.minStack or 0) > 0
-	SortAuctionItems("list", "buyout")
-	if reverseScan ~= IsAuctionSortReversed("list", "buyout") then
-		-- 再点一次切换升/降,使排序方向 == 我们想要的方向
-		SortAuctionItems("list", "buyout")
+	SortAuctionClearSort("list")
+	SortAuctionItems("list", "buyout") -- 确定性升序:最便宜的落在前几页,fastScan 才能读到真正的最低价
+	if reverseScan then
+		SortAuctionItems("list", "buyout") -- /gNN 最小堆叠模式:再点一次切到降序,大堆叠(总价高)落到最前页
 	end
 
 	-- setup the query
