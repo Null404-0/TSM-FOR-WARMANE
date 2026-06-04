@@ -45,6 +45,7 @@ local function eventHandler(event)
 		-- auction house was closed, make sure all scanning is stopped
 		dbg("AUCTION_HOUSE_CLOSED")
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+		private.queryEventRegistered = nil
 		TSMAPI:CancelFrame("queryTimeout")
 		private.auctionHouseShown = false
 		DoCallback("INTERRUPTED")
@@ -53,6 +54,7 @@ local function eventHandler(event)
 		-- gets called whenever the AH window is updated (something is shown in the results section)
 		dbg("AUCTION_ITEM_LIST_UPDATE page=%s", tostring(private.query and private.query.page))
 		AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+		private.queryEventRegistered = nil
 		TSMAPI:CancelFrame("updateDelay")
 		TSMAPI:CancelFrame("queryTimeout")
 		private.queryTimeoutCount = 0
@@ -236,6 +238,7 @@ function private:SendQuery()
 		dbg("SendQuery page=%s name=%q (firing QueryAuctionItems)", tostring(private.query.page), tostring(private.query.name))
 		-- Query the auction house (then waits for AUCTION_ITEM_LIST_UPDATE to fire)
 		AuctionScanning:RegisterEvent("AUCTION_ITEM_LIST_UPDATE", eventHandler)
+		private.queryEventRegistered = true
 		-- [exact]  cardinal ruby  0   0  nil  0   0  0  0   0
 		-- [normal] cardinal ruby nil nil nil nil nil 0 nil nil
 		QueryAuctionItems(private.query.name, private.query.minLevel, private.query.maxLevel, private.query.invType, private.query.class, private.query.subClass, private.query.page, private.query.usable, private.query.quality)
@@ -243,9 +246,10 @@ function private:SendQuery()
 		-- which would otherwise hang the scan. If we don't see the event in time, re-send the query.
 		TSMAPI:CreateTimeDelay("queryTimeout", QUERY_TIMEOUT, function()
 			if not private.isScanning then dbg("watchdog: not scanning, ignore"); return end
-			if not AuctionScanning:IsEventRegistered("AUCTION_ITEM_LIST_UPDATE") then dbg("watchdog: event already gone, ignore"); return end
+			if not private.queryEventRegistered then dbg("watchdog: event already gone, ignore"); return end
 			dbg("watchdog FIRED page=%s retries=%d (no AUCTION_ITEM_LIST_UPDATE in %ds)", tostring(private.query.page), (private.queryTimeoutCount or 0)+1, QUERY_TIMEOUT)
 			AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+			private.queryEventRegistered = nil
 			private.queryTimeoutCount = (private.queryTimeoutCount or 0) + 1
 			if private.queryTimeoutCount > MAX_QUERY_RETRIES then
 				dbg("watchdog: max retries (%d) hit -> INTERRUPTED", MAX_QUERY_RETRIES)
@@ -471,6 +475,7 @@ function private:StopScanning()
 	TSMAPI:CancelFrame("queryTimeout")
 	private.queryTimeoutCount = 0
 	AuctionScanning:UnregisterEvent("AUCTION_ITEM_LIST_UPDATE")
+	private.queryEventRegistered = nil
 	private.isScanning = nil
 	private.pageTemp = nil
 end
