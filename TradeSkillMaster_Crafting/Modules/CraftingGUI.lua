@@ -520,6 +520,10 @@ function GUI:CastTradeSkill(index, quantity, vellum, vellumItemID)
 	quantity = vellum and 1 or quantity
 	DoTradeSkill(index, quantity)
 	GUI.isCrafting = { quantity = quantity, spellID = TSM.Util:GetSpellID(index) }
+	-- 看门狗:被移动打断的制作不一定能拿到可匹配的 UNIT_SPELLCAST_* 事件来清掉 isCrafting,
+	-- 且打断不产出成品(也就没有 TRADE_SKILL_UPDATE 刷新),旧逻辑下"制造下一个"按钮会一直灰着
+	-- 直到小退重登。这里直接轮询玩家真实的施法状态,制作一停就把按钮恢复回来,与触发了哪个事件无关。
+	GUI:StartCraftWatchdog()
 	if vellum then
 		-- zhCN client localizes Armor Vellum III and Weapon Vellum III to the
 		-- same name, so UseItemByName picks the wrong one. Find the exact
@@ -539,6 +543,41 @@ function GUI:CastTradeSkill(index, quantity, vellum, vellumItemID)
 			end
 		end
 		UseItemByName(vellum)
+	end
+end
+
+-- 启动"制作看门狗":每 0.2s 轮询一次,直到制作结束。在 CastTradeSkill 里开启。
+function GUI:StartCraftWatchdog()
+	GUI.craftIdleTime = 0
+	GUI.craftSeenCasting = nil
+	TSMAPI:CancelFrame("craftWatchdog")
+	TSMAPI:CreateTimeDelay("craftWatchdog", 0.2, GUI.CraftWatchdog, 0.2)
+end
+
+-- 看门狗本体:观察 UnitCastingInfo,在制作真正停下后(打断/失败/未起手)兜底清掉 isCrafting
+-- 并刷新队列,从而恢复"制造下一个"按钮。普通完成会由 UNIT_SPELLCAST_SUCCEEDED 先一步清掉
+-- isCrafting,届时本函数发现 isCrafting 为空便自行退出。
+function GUI.CraftWatchdog()
+	-- isCrafting 已被事件清掉(正常完成或被事件成功匹配的打断):停止轮询
+	if not GUI.isCrafting then
+		TSMAPI:CancelFrame("craftWatchdog")
+		return
+	end
+	if UnitCastingInfo("player") then
+		-- 正在施法。DoTradeSkill 批量制作在两次之间是同一帧内无缝衔接,所以这里也顺带覆盖了
+		-- 连续制作之间的极短空档,不会被误判成"已停下"。
+		GUI.craftSeenCasting = true
+		GUI.craftIdleTime = 0
+		return
+	end
+	GUI.craftIdleTime = (GUI.craftIdleTime or 0) + 0.2
+	-- 见过施法条之后,持续一小段没在施法 = 被移动打断 → 快速恢复;还没见过施法条时多等一会,
+	-- 吸收私服上 DoTradeSkill 到施法真正起手之间的延迟,避免把"正要开始的制作"误清掉。
+	local idleLimit = GUI.craftSeenCasting and 0.6 or 2
+	if GUI.craftIdleTime >= idleLimit then
+		GUI.isCrafting = nil
+		TSMAPI:CancelFrame("craftWatchdog")
+		TSMAPI:CreateTimeDelay("craftingQueueUpdateThrottle", 0.2, GUI.UpdateQueue)
 	end
 end
 
