@@ -18,6 +18,7 @@ local SELLER_RETRY_DELAY = 1.5 -- max time (in BASE_DELAY steps) to soft-retry w
 local QUERY_TIMEOUT = 5 -- seconds to wait for AUCTION_ITEM_LIST_UPDATE before re-sending the query (private servers occasionally drop the event)
 local MAX_QUERY_RETRIES = 3
 local EMPTY_RETRY_LIMIT = 5 -- bounded soft-retries when a query scan's first page comes back empty while the query is still in-flight (cold-start / sort-echo race) before accepting it as a genuine 0-results query
+local SORT_RESTORE_DELAY = 3 -- 秒;/gNN 降序扫描后,玩家这么久不再点购买才把原生 AH 排序还原成升序。每次提前购买都会把这个倒计时往后推,所以还原只在购买停下后才发生,不会打断按页快速定位的购买
 local private = { callbackHandler = nil, query = {}, options = {}, data = {}, isScanning = nil }
 TSMAPI:RegisterForTracing(private, "TradeSkillMaster.AuctionScanning_private")
 local scanCache = {}
@@ -179,8 +180,9 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 	-- 必然是升序(把某列提为主排序时默认 reversed=false,与翻转标志无关,是确定性的);只有
 	-- reverseScan 时再点一次切到降序。全程不读 IsAuctionSortReversed,无论它准不准都不影响结果。
 	local reverseScan = (query.minStack or 0) > 0
-	-- 记住本轮是不是 /gNN 降序扫描:扫描收尾(StopScanning)时好把原生 AH 的一口价排序还原成
-	-- 升序,免得降序状态留在原生拍卖行界面里、影响之后日常(非 /gNN)随手搜东西。
+	-- 记住本轮是不是 /gNN 降序扫描:扫描收尾时据此安排把原生 AH 排序"延迟还原成升序"(见
+	-- StopScanning / MaybeRestoreSort)。普通搜索接手时这里会被设回 false,从而让那次待执行的
+	-- 还原自动作废、不会误清新搜索的缓存。
 	private.reverseScan = reverseScan
 	SortAuctionClearSort("list")
 	SortAuctionItems("list", "buyout") -- 确定性升序:最便宜的落在前几页,fastScan 才能读到真正的最低价
@@ -214,6 +216,7 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 end
 
 function TSMAPI.AuctionScan:ScanLastPage(callbackHandler)
+	private.reverseScan = nil -- Sniper/末页扫描不是 /gNN,清掉残留标志,避免触发或残留升序还原任务
 	private:StopScanning() -- stop any scan in progress
 
 	if not AuctionFrame:IsVisible() then
@@ -516,18 +519,35 @@ function private:StopScanning()
 	private.isScanning = nil
 	private.pageTemp = nil
 
-	-- /gNN(最小堆叠)扫描会把原生拍卖行"list"的一口价排序切成降序,好让大堆叠(总价高)落到
-	-- 最前页、扫描早期就能在增量结果里看到。但这个降序状态会留在原生 AH 界面里:扫完之后玩家
-	-- 直接用原生拍卖行随手搜一个物品,就会看到"最贵的排在最前面",得手动再点一次一口价列才恢复。
-	-- 这里在 /gNN 扫描收尾时把排序还原成确定性升序(等于普通扫描结束后的状态),让日常(非 /gNN)
-	-- 使用和加这个功能之前完全一样。只有 reverseScan 才动它——普通扫描本就以升序收尾,无需多此一举。
+	-- /gNN(最小堆叠)扫描会把原生拍卖行"list"的一口价排序切成降序,好让大堆叠(总价高)落到最前页、
+	-- 扫描早期就能在增量结果里看到。但这个降序状态会留在原生 AH 界面里:扫完之后玩家直接用原生拍卖行
+	-- 随手搜东西,就会看到"最贵的排在最前面",得手动再点一次一口价列才恢复。
+	-- 所以 /gNN 扫描收尾时安排一次"把排序还原成升序"的延迟任务,但【不立刻执行】:玩家常常不等扫完
+	-- 就点结果提前购买,而提前购买依赖刚才那份降序扫描缓存(scanCache)按页快速定位;此刻若马上翻成
+	-- 升序,缓存页码就对不上、FindAuction 会落空并退到慢的全表兜底。改为等玩家空闲一小段(不再点购买)
+	-- 后,MaybeRestoreSort 才真正还原升序并清掉这份已失配的缓存——既让日常使用恢复升序,又不拖慢购买。
 	if private.reverseScan then
-		private.reverseScan = nil
-		if AuctionFrame and AuctionFrame:IsVisible() then
-			SortAuctionClearSort("list")
-			SortAuctionItems("list", "buyout") -- 升序:最便宜的在前,和普通搜索保持一致
-		end
+		TSMAPI:CreateTimeDelay("auctionSortRestore", SORT_RESTORE_DELAY, private.MaybeRestoreSort)
 	end
+end
+
+-- /gNN 扫描后把原生 AH 一口价排序延迟还原成升序的执行体(由 StopScanning 安排,可自我重排)。
+function private.MaybeRestoreSort()
+	-- 普通搜索/其它扫描已接手(reverseScan 被设回 false/nil):无需还原,这份缓存也归它们管,直接退出。
+	if not private.reverseScan then return end
+	-- 有扫描正在进行:排序归它管,等它自己收尾时再安排,这里不插手。
+	if private.isScanning then return end
+	-- 还有一次定位(提前购买)正在途中:推迟还原,免得把按页快速定位打断;稍后再查。
+	if TSMAPI.AuctionScan:IsFindScanning() then
+		TSMAPI:CreateTimeDelay("auctionSortRestore", SORT_RESTORE_DELAY, private.MaybeRestoreSort)
+		return
+	end
+	private.reverseScan = nil
+	if AuctionFrame and AuctionFrame:IsVisible() then
+		SortAuctionClearSort("list")
+		SortAuctionItems("list", "buyout") -- 升序:最便宜的在前,和普通搜索结束后的状态一致
+	end
+	TSMAPI.AuctionScan:ClearCache() -- 降序索引的缓存对升序已失效,清掉以免后续 FindAuction 按错页定位
 end
 
 -- API for stopping the scan
@@ -540,6 +560,7 @@ end
 
 -- Gets the number of pages for a given query
 function TSMAPI.AuctionScan:GetNumPages(query, callbackHandler)
+	private.reverseScan = nil -- 数页扫描不是 /gNN,清掉残留标志,避免触发或残留升序还原任务
 	private:StopScanning() -- stop any scan in progress
 
 	if not AuctionFrame:IsVisible() then
@@ -659,6 +680,12 @@ end
 -- valid targetInfo keys: itemString, count, bid, buyout, seller
 function TSMAPI.AuctionScan:FindAuction(callback, targetInfo, useCache)
 	if findPrivate.isScanning then TSMAPI.AuctionScan:StopFindScan() end
+	-- 玩家正在用 /gNN 的降序缓存提前购买:每点一次就把"还原升序"的延迟任务往后推一截,直到购买
+	-- 停下 SORT_RESTORE_DELAY 秒。这样还原永远不会打断仍在按页快速定位的购买流程(见 MaybeRestoreSort)。
+	if private.reverseScan then
+		TSMAPI:CancelFrame("auctionSortRestore")
+		TSMAPI:CreateTimeDelay("auctionSortRestore", SORT_RESTORE_DELAY, private.MaybeRestoreSort)
+	end
 
 	findPrivate.keys = { "itemString", "count", "bid", "buyout", "seller" }
 	for i = #findPrivate.keys, 1, -1 do
