@@ -179,6 +179,9 @@ function TSMAPI.AuctionScan:RunQuery(query, callbackHandler, resolveSellers, max
 	-- 必然是升序(把某列提为主排序时默认 reversed=false,与翻转标志无关,是确定性的);只有
 	-- reverseScan 时再点一次切到降序。全程不读 IsAuctionSortReversed,无论它准不准都不影响结果。
 	local reverseScan = (query.minStack or 0) > 0
+	-- 记住本轮是不是 /gNN 降序扫描:扫描收尾(StopScanning)时好把原生 AH 的一口价排序还原成
+	-- 升序,免得降序状态留在原生拍卖行界面里、影响之后日常(非 /gNN)随手搜东西。
+	private.reverseScan = reverseScan
 	SortAuctionClearSort("list")
 	SortAuctionItems("list", "buyout") -- 确定性升序:最便宜的落在前几页,fastScan 才能读到真正的最低价
 	if reverseScan then
@@ -512,6 +515,19 @@ function private:StopScanning()
 	private.queryEventRegistered = nil
 	private.isScanning = nil
 	private.pageTemp = nil
+
+	-- /gNN(最小堆叠)扫描会把原生拍卖行"list"的一口价排序切成降序,好让大堆叠(总价高)落到
+	-- 最前页、扫描早期就能在增量结果里看到。但这个降序状态会留在原生 AH 界面里:扫完之后玩家
+	-- 直接用原生拍卖行随手搜一个物品,就会看到"最贵的排在最前面",得手动再点一次一口价列才恢复。
+	-- 这里在 /gNN 扫描收尾时把排序还原成确定性升序(等于普通扫描结束后的状态),让日常(非 /gNN)
+	-- 使用和加这个功能之前完全一样。只有 reverseScan 才动它——普通扫描本就以升序收尾,无需多此一举。
+	if private.reverseScan then
+		private.reverseScan = nil
+		if AuctionFrame and AuctionFrame:IsVisible() then
+			SortAuctionClearSort("list")
+			SortAuctionItems("list", "buyout") -- 升序:最便宜的在前,和普通搜索保持一致
+		end
+	end
 end
 
 -- API for stopping the scan
