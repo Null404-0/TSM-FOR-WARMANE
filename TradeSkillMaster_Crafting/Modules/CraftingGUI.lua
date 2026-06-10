@@ -562,7 +562,6 @@ end
 -- 启动"制作看门狗":每 0.2s 轮询一次,直到制作结束。在 CastTradeSkill 里开启。
 function GUI:StartCraftWatchdog()
 	GUI.craftIdleTime = 0
-	GUI.craftSeenCasting = nil
 	TSMAPI:CancelFrame("craftWatchdog")
 	TSMAPI:CreateTimeDelay("craftWatchdog", 0.2, GUI.CraftWatchdog, 0.2)
 end
@@ -578,29 +577,18 @@ function GUI.CraftWatchdog()
 	end
 	if UnitCastingInfo("player") then
 		-- 正在施法,重置空闲计时。
-		GUI.craftSeenCasting = true
 		GUI.craftIdleTime = 0
 		return
 	end
 	GUI.craftIdleTime = (GUI.craftIdleTime or 0) + 0.2
-	-- 判停阈值按客户端的批量重复状态区分。批量制作两次施法之间并非无缝:客户端要等服务器
-	-- 确认上一次成功才发起下一次,空档约等于网络延迟,卡顿时可能远超 0.6s。v2.9.6 对这种
-	-- 空档用 0.6s 短阈值误判"已停止",提前清掉 isCrafting,造成本地化客户端队列漏扣、
-	-- 按钮提前解锁,配合连点(按键精灵)会把同一配方多做几次(材料越界)。
-	-- * repeat>0:客户端还打算继续重复 → 只留 5s 极限兜底,正常批间空档碰不到;
-	-- * repeat==0:移动打断/失败时客户端会撤销整个批量 → 保持快速恢复,见过施法条后
-	--   0.6s,没见过(没起手)等 2s 吸收私服起手延迟。卡灰修复效果不变。
-	local idleLimit
-	if (GetTradeskillRepeatCount() or 0) > 0 then
-		idleLimit = 5
-	elseif GUI.craftSeenCasting then
-		idleLimit = 0.6
-	else
-		idleLimit = 2
-	end
-	if GUI.craftIdleTime >= idleLimit then
-		-- 恢复按钮前先撤销可能残存的批量重复,避免恢复后旧批量又自己续上一发、
-		-- 和下一次点击的 DoTradeSkill 叠加。
+	-- 批量制作两次施法之间并非无缝:客户端要等服务器确认上一次成功才发起下一次,空档约等于
+	-- 网络延迟,卡顿时可能超过 1 秒。v2.9.6 用 0.6s 判停会把这种空档误判成"已停止",提前
+	-- 清掉 isCrafting,造成本地化客户端队列漏扣、按钮提前解锁,连点之下多做越界。统一用 2s:
+	-- 正常批间空档远碰不到;被移动打断后,事件名匹配得上的打断由 UNIT_SPELLCAST_INTERRUPTED
+	-- 即时恢复,这里只兜匹配不上的底,最多 2 秒恢复按钮,仍远好于重登。
+	if GUI.craftIdleTime >= 2 then
+		-- 恢复按钮前先撤销可能残存的批量重复(客户端提供该 API 时),
+		-- 避免误判"已停止"时旧批量与下一次点击的 DoTradeSkill 叠加。
 		if CancelTradeSkillRepeat then
 			CancelTradeSkillRepeat()
 		end
@@ -975,9 +963,10 @@ function GUI:CreateQueueFrame(parent)
 	-- end)
 	btn:SetScript("OnClick", function(self)
 		if UnitCastingInfo("player") or not GUI.craftNextInfo or not self:IsVisible() then return end
-		-- 客户端批量重复还在进行(两次施法之间的空档):此时再发 DoTradeSkill 会和旧批量
-		-- 叠加,把同一配方多做几次(材料越界)。按键精灵之类的连点器最容易踩进这个空档。
-		if (GetTradeskillRepeatCount() or 0) > 0 then return end
+		-- 自己的批量还没结束(isCrafting 尚未被完成/打断事件或看门狗清掉)就不再发
+		-- DoTradeSkill,防止连点器踩进两次施法之间的空档把第二批叠上去(多做越界)。
+		-- isCrafting 由事件即时清除,看门狗 2 秒兜底清除,不会把按钮锁死。
+		if GUI.isCrafting then return end
 		GUI:CastTradeSkill(GUI.craftNextInfo.index, GUI.craftNextInfo.quantity, GUI.craftNextInfo.velName, GUI.craftNextInfo.velItemID)
 		self:Disable()
 	end)
@@ -2123,10 +2112,6 @@ end
 
 function GUI:UpdateCraftButton()
 	if UnitCastingInfo("player") or not GUI.craftNextInfo then
-		TSMCraftNextButton:Disable()
-	elseif (GetTradeskillRepeatCount() or 0) > 0 then
-		-- 客户端批量重复未结束就不解锁:TRADE_SKILL_UPDATE 每做完一个都会触发队列刷新,
-		-- 若看门狗误清了 isCrafting,这里就是防止按钮中途亮起被连点器点中的最后一道闸。
 		TSMCraftNextButton:Disable()
 	elseif GUI.isCrafting and GUI.isCrafting.quantity > 0 then
 		TSMCraftNextButton:Disable()
